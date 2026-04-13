@@ -2,6 +2,22 @@
   "name": "cdp-custodial-access",
   "version": "0.1.0",
   "description": "CDP-based browser automation SDK with stealth and MCP server",
+  "license": "MIT",
+  "author": "Mohit Goyal",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mohit-goyal/cdp-custodial-access"
+  },
+  "keywords": [
+    "cdp",
+    "chrome-devtools-protocol",
+    "browser-automation",
+    "puppeteer",
+    "stealth",
+    "web-scraping",
+    "mcp",
+    "model-context-protocol"
+  ],
   "type": "module",
   "main": "./dist/sdk/index.js",
   "types": "./dist/sdk/index.d.ts",
@@ -29,6 +45,11 @@
     "mcp": "node dist/mcp/index.js",
     "lint": "eslint src/"
   },
+  "files": [
+    "dist/",
+    "LICENSE",
+    "README.md"
+  ],
   "engines": {
     "node": ">=20.0.0"
   },

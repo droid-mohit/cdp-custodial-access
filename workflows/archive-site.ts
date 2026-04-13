@@ -26,7 +26,7 @@ import * as os from 'node:os';
 
 const WORKFLOW_NAME = path.basename(import.meta.filename, path.extname(import.meta.filename));
 const DEFAULT_MAX_PAGES = 50;
-const PAGE_SETTLE_MS = 2000;
+const PAGE_SETTLE_MS = 500;
 const NAV_TIMEOUT_MS = 30000;
 
 // ─── CLI Args ────────────────────────────────────────────────────────
@@ -134,6 +134,19 @@ async function run() {
 
         const title = await page.title();
 
+        // Skip 404 / error pages
+        const is404 = /not found|404/i.test(title) ||
+          await page.evaluate(() => {
+            const body = document.body?.innerText?.slice(0, 500) ?? '';
+            return /page not found|this page doesn't exist|404/i.test(body);
+          });
+
+        if (is404) {
+          console.warn(`[archive] Skipping 404 page: ${pageUrl}`);
+          failed.push({ url: pageUrl, error: '404 — page not found' });
+          continue;
+        }
+
         // Inject source URL header into the page before PDF capture
         await page.evaluate((src: string, num: number, total: number) => {
           const h = document.createElement('div');
@@ -147,6 +160,7 @@ async function run() {
           format: 'A4',
           printBackground: true,
           margin: { top: '20px', bottom: '20px', left: '20px', right: '20px' },
+          timeout: 60000,
         });
 
         // Clean up injected header
@@ -186,8 +200,6 @@ async function run() {
     fs.writeFileSync(archivePath, mergedBytes);
 
     // 5. Save traces + metadata
-    session.tracer.save();
-
     const metadata = {
       workflow: WORKFLOW_NAME,
       startUrl: url,

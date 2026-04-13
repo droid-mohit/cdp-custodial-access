@@ -106,4 +106,4 @@ Puppeteer (puppeteer-extra + stealth plugin)
 
 ## Instructions
 
-1. Never commit anything to git. All changes will be reviewed by a developer and added to git by the developer.
+1. All changes will be reviewed by a developer before merging. Create feature branches for non-trivial changes.
