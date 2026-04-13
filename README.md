@@ -87,6 +87,7 @@ Debug a workflow using its audit traces:
 | **LLM** | `llmExtract` |
 | **Tabs** | `listTabs`, `switchTab`, `closeTab` |
 | **Files** | `writeFile`, `readFile` |
+| **Site Discovery** | `fetchSitemap`, `fetchRobots`, `isUrlAllowed` |
 | **Task** | `done` |
 
 All tools return `ToolResult<T>` with `success`, `data`, `error`, and `errorCode` fields. Tools never throw.
@@ -113,6 +114,35 @@ const result = await session.llmExtract({
 ```
 
 Supports OpenAI, Anthropic, and AWS Bedrock. Auto-cleans HTML (strips scripts/styles/nav), chunks across context limits, and merges partial results.
+
+### Site Discovery
+
+Discover pages on a site using `sitemap.xml` and respect crawl rules from `robots.txt`. These are session-independent tools — no browser needed.
+
+```typescript
+import { fetchSitemap, fetchRobots, isUrlAllowed } from 'cdp-custodial-access/tools';
+
+// Discover all pages via sitemap
+const sitemap = await fetchSitemap({ url: 'https://docs.example.com' });
+if (sitemap.success) {
+  console.log(sitemap.data.entries); // [{ url, lastmod, priority }, ...]
+}
+
+// Check robots.txt rules
+const robots = await fetchRobots({ url: 'https://example.com' });
+if (robots.success) {
+  const allowed = isUrlAllowed({
+    url: 'https://example.com/admin',
+    rules: robots.data.rules,
+  });
+  console.log(allowed); // false (if /admin is disallowed)
+
+  // robots.txt also declares sitemap URLs
+  console.log(robots.data.sitemaps); // ['https://example.com/sitemap.xml']
+}
+```
+
+The `archive-site` workflow uses both automatically: sitemap for page discovery (with fallback to link crawling), robots.txt for filtering disallowed paths.
 
 ## Stealth Levels
 
@@ -181,7 +211,7 @@ Output structure:
 |----------|-------------|-------|
 | `example` | Query ChatGPT and save the response HTML | `npx tsx workflows/example.ts --headed` |
 | `yahoo-finance-stocks` | Extract trending stock data from Yahoo Finance | `npx tsx workflows/yahoo-finance-stocks.ts` |
-| `archive-site` | Crawl a site 1 level deep, merge all pages into a single PDF | `npx tsx workflows/archive-site.ts <url> [--max-pages N]` |
+| `archive-site` | Discover pages via sitemap.xml (fallback: link crawling), respect robots.txt, merge into a single PDF | `npx tsx workflows/archive-site.ts <url> [--max-pages N]` |
 
 ## Project Structure
 

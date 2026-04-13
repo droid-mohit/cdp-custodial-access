@@ -52,9 +52,11 @@ Puppeteer (puppeteer-extra + stealth plugin)
 **Additional layers:**
 - `src/llm/` — LLM abstraction (factory pattern): OpenAI, Anthropic, Bedrock. Bedrock is an optional dep loaded dynamically.
 - `llmExtract` tool — extracts structured data from collected HTML pages via LLM. Uses tracer HTML snapshots or explicit pages.
+- `fetchSitemap`/`fetchRobots` tools — pure HTTP, no browser session needed. Pattern for non-browser utility tools.
 
 **Key patterns:**
 - Tools are standalone functions taking `(session, params)` → `ToolResult<T>`. They never throw — errors return `{ success: false, errorCode }`.
+- Some tools are session-independent (sitemap, robots) — they take only params, no session. These use `fetch()` directly.
 - Tools are atomic operations. Multi-step use cases (crawling, archiving) belong in `workflows/`, not `src/tools/`.
 - `page.pdf()` only works in headless mode — workflows that generate PDFs must force `headless: true`.
 - `EnrichedSession` is a `BrowserSession` with tool methods attached (e.g., `session.navigate(...)`, `session.click(...)`).

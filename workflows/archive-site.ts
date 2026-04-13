@@ -17,6 +17,9 @@
  */
 
 import { BrowserController } from '../src/sdk/browser-controller.js';
+import { fetchSitemap } from '../src/tools/sitemap.js';
+import { fetchRobots, isUrlAllowed } from '../src/tools/robots.js';
+import type { RobotsRule } from '../src/tools/robots.js';
 import { PDFDocument } from 'pdf-lib';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -92,34 +95,89 @@ async function run() {
 
   try {
     const page = await session.page();
+    const baseUrl = url.replace(/\/$/, '');
+    const baseDomain = new URL(baseUrl).hostname;
 
-    // 1. Navigate to start page
-    console.log(`[archive] Loading start page: ${url}`);
-    await session.navigate({ url, waitUntil: 'networkidle2', timeout: NAV_TIMEOUT_MS });
-    await session.wait({ ms: PAGE_SETTLE_MS });
+    // 1. Fetch robots.txt — respect crawl restrictions
+    console.log(`[archive] Checking robots.txt...`);
+    let robotsRules: RobotsRule[] = [];
+    const robotsResult = await fetchRobots({ url: baseUrl });
+    if (robotsResult.success && robotsResult.data) {
+      robotsRules = robotsResult.data.rules;
+      const disallowCount = robotsRules.reduce((sum, r) => sum + r.disallow.length, 0);
+      console.log(`[archive] robots.txt: ${robotsRules.length} rule(s), ${disallowCount} disallowed path(s)`);
 
-    const startUrl = new URL(page.url());
-    const baseDomain = startUrl.hostname;
-
-    // 2. Discover same-domain links (1 level deep)
-    const discoveredLinks: string[] = await page.evaluate((domain: string) => {
-      const links = new Set<string>();
-      const anchors = document.querySelectorAll('a[href]');
-      for (const a of anchors) {
-        const href = (a as HTMLAnchorElement).href;
-        try {
-          const u = new URL(href);
-          if (u.hostname === domain && u.protocol.startsWith('http')) {
-            u.hash = '';
-            links.add(u.toString());
-          }
-        } catch { /* skip invalid */ }
+      // Check if robots.txt declares sitemaps
+      if (robotsResult.data.sitemaps.length > 0) {
+        console.log(`[archive] robots.txt declares ${robotsResult.data.sitemaps.length} sitemap(s)`);
       }
-      return Array.from(links);
-    }, baseDomain);
+    } else {
+      console.log(`[archive] No robots.txt found — all paths allowed`);
+    }
 
-    const allUrls = [...new Set([page.url(), ...discoveredLinks])].slice(0, maxPages);
-    console.log(`[archive] Found ${allUrls.length} pages on ${baseDomain}`);
+    // 2. Discover pages — try sitemap first, fall back to link crawling
+    let discoveredUrls: string[] = [];
+    let discoveryMethod: 'sitemap' | 'crawl';
+
+    // Try sitemap.xml (also try URLs from robots.txt Sitemap directives)
+    console.log(`[archive] Looking for sitemap.xml...`);
+    const sitemapUrlsToTry = [baseUrl];
+    if (robotsResult.success && robotsResult.data?.sitemaps.length) {
+      sitemapUrlsToTry.push(...robotsResult.data.sitemaps);
+    }
+
+    for (const sitemapUrl of sitemapUrlsToTry) {
+      const sitemapResult = await fetchSitemap({ url: sitemapUrl, maxEntries: maxPages });
+      if (sitemapResult.success && sitemapResult.data && sitemapResult.data.entries.length > 0) {
+        discoveredUrls = sitemapResult.data.entries
+          .filter((e) => {
+            try { return new URL(e.url).hostname === baseDomain; } catch { return false; }
+          })
+          .map((e) => e.url);
+        discoveryMethod = 'sitemap';
+        console.log(`[archive] Sitemap found: ${sitemapResult.data.totalFound} URLs (using ${sitemapResult.data.sitemapUrls.join(', ')})`);
+        break;
+      }
+    }
+
+    // Fallback: crawl start page for same-domain links
+    if (discoveredUrls.length === 0) {
+      console.log(`[archive] No sitemap found — falling back to link discovery from start page`);
+      discoveryMethod = 'crawl';
+
+      await session.navigate({ url, waitUntil: 'networkidle2', timeout: NAV_TIMEOUT_MS });
+      await session.wait({ ms: PAGE_SETTLE_MS });
+
+      discoveredUrls = await page.evaluate((domain: string) => {
+        const links = new Set<string>();
+        const anchors = document.querySelectorAll('a[href]');
+        for (const a of anchors) {
+          const href = (a as HTMLAnchorElement).href;
+          try {
+            const u = new URL(href);
+            if (u.hostname === domain && u.protocol.startsWith('http')) {
+              u.hash = '';
+              links.add(u.toString());
+            }
+          } catch { /* skip invalid */ }
+        }
+        return Array.from(links);
+      }, baseDomain);
+    }
+
+    // 3. Filter by robots.txt and deduplicate
+    const preFilterCount = discoveredUrls.length;
+    discoveredUrls = discoveredUrls.filter((u) =>
+      isUrlAllowed({ url: u, rules: robotsRules }),
+    );
+    const filteredCount = preFilterCount - discoveredUrls.length;
+    if (filteredCount > 0) {
+      console.log(`[archive] Filtered ${filteredCount} URL(s) disallowed by robots.txt`);
+    }
+
+    // Ensure start page is included and deduplicate
+    const allUrls = [...new Set([url, ...discoveredUrls])].slice(0, maxPages);
+    console.log(`[archive] ${allUrls.length} pages to archive (source: ${discoveryMethod}, domain: ${baseDomain})`);
 
     // 3. Capture each page as PDF
     for (let i = 0; i < allUrls.length; i++) {
@@ -204,6 +262,8 @@ async function run() {
       workflow: WORKFLOW_NAME,
       startUrl: url,
       domain: baseDomain,
+      discoveryMethod,
+      robotsRulesApplied: robotsRules.length > 0,
       startedAt: new Date(startTime).toISOString(),
       completedAt: new Date().toISOString(),
       durationMs: Date.now() - startTime,
