@@ -97,6 +97,35 @@ All tools return `ToolResult<T>` with `success`, `data`, `error`, and `errorCode
 | `advanced` | Adds behavioral stealth (mouse/typing/scroll) and TLS fingerprinting |
 | `maximum` | Adds fingerprint randomization (WebGL, Canvas, AudioContext, fonts) |
 
+## Profiles
+
+Profiles are namespaced per workflow. Each workflow gets its own isolated browser identity that persists cookies, localStorage, cache, and fingerprint across runs.
+
+```
+~/.cdp-custodial-access/profiles/
+  my-app/                    # workflow namespace
+    default/                 # profile name (auto-created)
+      chrome/                # Chrome user data dir
+      metadata.json          # fingerprint, proxy, timestamps
+    logged-in/               # named profile
+      chrome/
+      metadata.json
+```
+
+```typescript
+// Uses 'default' profile — persists across runs
+await controller.launch({ workflow: 'my-app' });
+
+// Uses a named profile
+await controller.launch({ workflow: 'my-app', profile: 'logged-in' });
+
+// Manage profiles programmatically
+const pm = controller.getProfileManager();
+pm.listWorkflows();                          // ['my-app', ...]
+pm.listProfiles('my-app');                   // ['default', 'logged-in']
+pm.deleteProfile('my-app', 'default');       // Reset to fresh state
+```
+
 ## Audit Trails
 
 Every tool call is automatically traced. Set up the tracer in your workflow:
