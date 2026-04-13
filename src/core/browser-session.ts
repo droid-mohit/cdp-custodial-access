@@ -2,25 +2,46 @@ import type { Browser, Page, CDPSession } from 'puppeteer';
 import type { StealthManager } from '../stealth/index.js';
 import type { FingerprintProfile, ProxyConfig } from '../types.js';
 import type { ProfileManager } from './profile-manager.js';
+import { Tracer } from './tracer.js';
 import { randomUUID } from 'node:crypto';
 
 export class BrowserSession {
   public readonly id: string;
+  public readonly tracer: Tracer;
+  private readonly capturedPages = new WeakSet<Page>();
 
   constructor(
     private readonly browser: Browser,
     private readonly stealthManager: StealthManager,
     private readonly fingerprint: FingerprintProfile,
+    private readonly workflowName?: string,
     private readonly profileName?: string,
     private readonly profileManager?: ProfileManager,
     private readonly proxy?: ProxyConfig,
   ) {
     this.id = randomUUID();
+    this.tracer = new Tracer();
+  }
+
+  /** Hook a page's console events into the tracer */
+  private captureConsole(page: Page): void {
+    if (this.capturedPages.has(page)) return;
+    this.capturedPages.add(page);
+
+    page.on('console', (msg) => {
+      const type = msg.type(); // 'log' | 'warn' | 'error' | ...
+      const level = type === 'error' ? 'error' as const
+        : type === 'warn' ? 'warn' as const
+        : 'info' as const;
+      this.tracer.log(msg.text(), { source: 'browser', level });
+    });
   }
 
   async page(): Promise<Page> {
     const pages = await this.browser.pages();
-    return pages[0];
+    const p = pages[0];
+    this.captureConsole(p);
+    return p;
   }
 
   async pages(): Promise<Page[]> {
@@ -30,6 +51,7 @@ export class BrowserSession {
   async newPage(): Promise<Page> {
     const page = await this.browser.newPage();
     await this.stealthManager.applyToPage(page, this.fingerprint);
+    this.captureConsole(page);
     return page;
   }
 
@@ -38,10 +60,15 @@ export class BrowserSession {
   }
 
   async persist(): Promise<void> {
-    if (!this.profileName || !this.profileManager) {
-      throw new Error('Cannot persist: session was not created with a profile name');
+    if (!this.workflowName || !this.profileManager) {
+      throw new Error('Cannot persist: session was not created with a workflow name');
     }
-    this.profileManager.saveMetadata(this.profileName, this.fingerprint, this.proxy);
+    this.profileManager.saveMetadata(
+      this.workflowName,
+      this.profileName ?? 'default',
+      this.fingerprint,
+      this.proxy,
+    );
   }
 
   async close(options?: { persist?: boolean }): Promise<void> {
@@ -53,6 +80,10 @@ export class BrowserSession {
 
   getFingerprint(): FingerprintProfile {
     return this.fingerprint;
+  }
+
+  getWorkflowName(): string | undefined {
+    return this.workflowName;
   }
 
   getProfileName(): string | undefined {

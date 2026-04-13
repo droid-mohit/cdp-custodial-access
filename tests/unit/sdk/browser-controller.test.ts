@@ -12,7 +12,7 @@ vi.mock('puppeteer-extra', () => {
     waitForSelector: vi.fn().mockResolvedValue({
       boundingBox: vi.fn().mockResolvedValue({ x: 50, y: 50, width: 100, height: 30 }),
     }),
-    bringToFront: vi.fn(), close: vi.fn(), content: vi.fn().mockResolvedValue('<html></html>'),
+    bringToFront: vi.fn(), close: vi.fn(), content: vi.fn().mockResolvedValue('<html></html>'), on: vi.fn(),
   };
   const mockBrowser = {
     pages: vi.fn().mockResolvedValue([mockPage]),

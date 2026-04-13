@@ -12,6 +12,7 @@ function createMockBrowser() {
     setExtraHTTPHeaders: vi.fn(),
     createCDPSession: vi.fn().mockResolvedValue({ send: vi.fn(), detach: vi.fn() }),
     close: vi.fn(),
+    on: vi.fn(),
   };
   const mockCDPSession = { send: vi.fn(), detach: vi.fn() };
   const mockTarget = { createCDPSession: vi.fn().mockResolvedValue(mockCDPSession) };
@@ -113,10 +114,11 @@ describe('BrowserSession', () => {
       browser as any,
       createMockStealthManager() as any,
       testFingerprint,
+      'test-workflow',
       'test-profile',
       profileManager as any,
     );
     await session.persist();
-    expect(profileManager.saveMetadata).toHaveBeenCalledWith('test-profile', testFingerprint, undefined);
+    expect(profileManager.saveMetadata).toHaveBeenCalledWith('test-workflow', 'test-profile', testFingerprint, undefined);
   });
 });

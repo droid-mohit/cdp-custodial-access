@@ -16,10 +16,12 @@ Create a workflow script in `workflows/` from a plain English use case descripti
 
 ## Workflow Template
 
-Every workflow MUST follow this structure:
+Every workflow MUST follow this structure. The `@prompt` tag at the top preserves the user's original request verbatim — this is used by `/improve-workflow` to understand intent.
 
 ```typescript
 /**
+ * @prompt {The user's original plain-English use case, copied verbatim}
+ *
  * Workflow: {Title}
  *
  * {One-line description}
@@ -66,20 +68,25 @@ async function run() {
   });
 
   const session = await controller.launch({
-    profile: '{profile-name}',
+    workflow: WORKFLOW_NAME,
     headless: !headed,
     locale: 'en-US',
     timezone: 'America/New_York',
   });
 
+  // Set up audit trail
+  const outputDir = buildOutputDir();
+  fs.mkdirSync(outputDir, { recursive: true });
+  session.tracer.setOutputDir(outputDir);
+
   try {
     // ... workflow steps
 
-    // Save output
-    const outputDir = buildOutputDir();
-    fs.mkdirSync(outputDir, { recursive: true });
+    // Save traces + output
+    session.tracer.save();
     // ... save files + metadata.json
   } finally {
+    session.tracer.save();
     await session.close({ persist: true });
   }
 }
@@ -137,7 +144,7 @@ All tools are methods on `session` (EnrichedSession). They return `ToolResult<T>
 
 - **Stealth**: Always use `level: 'none'` — the stealth plugin alone is sufficient and custom patches trigger detection on aggressive sites.
 - **Locale**: Always set `locale: 'en-US'` and `timezone` explicitly — random fingerprint picks can cause foreign language pages.
-- **Profile**: Use a descriptive profile name per workflow (e.g., `'google-search'`, `'linkedin-jobs'`). Profiles persist cookies across runs.
+- **Profile**: Pass `workflow: WORKFLOW_NAME` to auto-namespace profiles. Uses `'default'` profile unless user specifies otherwise. Profiles persist cookies across runs.
 - **Selectors**: Provide multiple fallback selectors for critical elements (sites change markup). Use a `trySelector()` helper that tries each in order.
 - **Waiting**: After navigation, add `session.wait({ms: 2000-3000})` for page settle. For dynamic content, poll with `page.evaluate()` until content stabilizes.
 - **Output**: Always save `metadata.json` alongside extracted data. Include workflow name, timestamps, duration, URL, and file list.

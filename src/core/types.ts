@@ -1,6 +1,9 @@
 import type { StealthConfig, ProxyConfig, FingerprintProfile } from '../types.js';
 
 export interface LaunchConfig {
+  /** Workflow name — used as the profile namespace (e.g., 'example', 'yahoo-finance-stocks') */
+  workflow?: string;
+  /** Profile name within the workflow namespace (default: 'default') */
   profile?: string;
   headless?: boolean;
   proxy?: ProxyConfig;
