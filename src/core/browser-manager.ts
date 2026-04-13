@@ -28,8 +28,11 @@ export class BrowserManager {
   async launch(launchConfig: LaunchConfig = {}): Promise<BrowserSession> {
     this.ensureStealthPlugin();
 
-    let fingerprint = launchConfig.profile
-      ? this.profileManager.loadMetadata(launchConfig.profile)?.fingerprint
+    const workflow = launchConfig.workflow;
+    const profile = launchConfig.profile ?? 'default';
+
+    let fingerprint = workflow
+      ? this.profileManager.loadMetadata(workflow, profile)?.fingerprint
       : undefined;
 
     if (!fingerprint) {
@@ -49,8 +52,8 @@ export class BrowserManager {
       ...this.stealthManager.getLaunchArgs(launchConfig.proxy),
       `--window-size=${viewport.width},${viewport.height}`,
     ];
-    const userDataDir = launchConfig.profile
-      ? this.profileManager.getProfileDir(launchConfig.profile)
+    const userDataDir = workflow
+      ? this.profileManager.getProfileDir(workflow, profile)
       : undefined;
 
     const browser = await puppeteer.launch({
@@ -70,13 +73,26 @@ export class BrowserManager {
       browser,
       this.stealthManager,
       fingerprint,
-      launchConfig.profile,
+      workflow,
+      profile,
       this.profileManager,
       launchConfig.proxy,
     );
 
-    if (launchConfig.profile) {
-      this.profileManager.saveMetadata(launchConfig.profile, fingerprint, launchConfig.proxy);
+    // Set run context for audit traces
+    session.tracer.setRunContext({
+      headless: launchConfig.headless ?? true,
+      profile: workflow ? `${workflow}/${profile}` : profile,
+      stealthLevel: this.config.stealth.level ?? 'none',
+      locale: fingerprint.locale,
+      timezone: fingerprint.timezone,
+      userAgent: fingerprint.userAgent,
+      viewport: fingerprint.viewport,
+      startedAt: new Date().toISOString(),
+    });
+
+    if (workflow) {
+      this.profileManager.saveMetadata(workflow, profile, fingerprint, launchConfig.proxy);
     }
 
     return session;
@@ -96,7 +112,7 @@ export class BrowserManager {
       await this.stealthManager.applyToPage(page, fingerprint);
     }
 
-    return new BrowserSession(browser, this.stealthManager, fingerprint);
+    return new BrowserSession(browser, this.stealthManager, fingerprint, undefined, undefined);
   }
 
   getProfileManager(): ProfileManager {

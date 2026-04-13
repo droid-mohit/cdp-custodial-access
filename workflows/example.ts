@@ -39,6 +39,8 @@ const SEND_BUTTON_SELECTORS = [
   'button[aria-label="Send"]',
 ];
 
+/** How long to wait for a Cloudflare challenge to be solved in headed mode (ms) */
+const CHALLENGE_TIMEOUT = 60_000;
 /** How long to wait for ChatGPT to finish responding (ms) */
 const RESPONSE_TIMEOUT = 120_000;
 /** Polling interval to check if response is complete (ms) */
@@ -80,6 +82,44 @@ async function trySelector(
 }
 
 /**
+ * Detect whether the current page is a Cloudflare challenge gate.
+ * Checks page title and Turnstile-specific DOM elements.
+ */
+async function isCloudflareChallenge(
+  session: Awaited<ReturnType<BrowserController['launch']>>,
+): Promise<boolean> {
+  const page = await session.page();
+  const title = await page.title();
+  if (title === 'Just a moment...') return true;
+
+  const hasTurnstile = await page.evaluate(() => {
+    return !!(
+      document.querySelector('input[name="cf-turnstile-response"]') ||
+      document.querySelector('[id*="cf-chl"]') ||
+      document.querySelector('script[src*="challenges.cloudflare.com/turnstile"]')
+    );
+  });
+  return hasTurnstile;
+}
+
+/**
+ * Wait for a Cloudflare challenge to be resolved (headed mode only).
+ * Polls until the page title changes away from the challenge page.
+ */
+async function waitForChallengeResolution(
+  session: Awaited<ReturnType<BrowserController['launch']>>,
+  timeoutMs: number,
+): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const stillBlocked = await isCloudflareChallenge(session);
+    if (!stillBlocked) return true;
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  return false;
+}
+
+/**
  * Wait until ChatGPT finishes generating its response.
  *
  * Strategy: poll the page for assistant message content. Once the content
@@ -95,7 +135,7 @@ async function waitForResponse(
   const start = Date.now();
 
   // Wait for the first sign of a response (assistant message appearing)
-  console.log('[workflow] Waiting for response to start...');
+  session.tracer.log('[workflow] Waiting for response to start...');
   while (Date.now() - start < timeoutMs) {
     const hasResponse = await page.evaluate(() => {
       // Look for assistant message containers
@@ -114,7 +154,7 @@ async function waitForResponse(
   }
 
   // Now wait for the response to stabilize (content stops changing)
-  console.log('[workflow] Response started, waiting for completion...');
+  session.tracer.log('[workflow] Response started, waiting for completion...');
   let lastLength = 0;
   let stableCount = 0;
   const STABLE_THRESHOLD = 3; // Must be stable for 3 consecutive polls
@@ -145,7 +185,7 @@ async function waitForResponse(
           return !!(stopBtn || stopBtn2);
         });
         if (!stillGenerating) {
-          console.log(`[workflow] Response stabilized at ${currentLength} chars.`);
+          session.tracer.log(`[workflow] Response stabilized at ${currentLength} chars.`);
           await new Promise((r) => setTimeout(r, 1000)); // Final settle
           return;
         }
@@ -159,7 +199,7 @@ async function waitForResponse(
     await new Promise((r) => setTimeout(r, RESPONSE_POLL_INTERVAL));
   }
 
-  console.warn('[workflow] Response timeout reached — saving whatever is on the page.');
+  session.tracer.log('[workflow] Response timeout reached — saving whatever is on the page.', { level: 'warn' });
 }
 
 // ─── Main Workflow ───────────────────────────────────────────────────
@@ -178,15 +218,30 @@ async function run() {
   });
 
   const session = await controller.launch({
-    profile: 'chatgpt-workflow',
+    workflow: WORKFLOW_NAME,
     headless: !headed,
     locale: 'en-US',
     timezone: 'America/New_York',
   });
 
+  // Close extra tabs from Chrome session restore — persistent profiles cause
+  // Chrome to reopen tabs from the previous session, creating duplicates
+  const openPages = await session.pages();
+  if (openPages.length > 1) {
+    session.tracer.log(`[workflow] Closing ${openPages.length - 1} restored tab(s) from previous session...`);
+    for (let i = 1; i < openPages.length; i++) {
+      await openPages[i].close();
+    }
+  }
+
+  // Set up audit trail — traces are saved automatically for every tool call
+  const outputDir = buildOutputDir();
+  fs.mkdirSync(outputDir, { recursive: true });
+  session.tracer.setOutputDir(outputDir);
+
   try {
     // 1. Navigate to ChatGPT
-    console.log('[workflow] Navigating to ChatGPT...');
+    session.tracer.log('[workflow] Navigating to ChatGPT...');
     const navResult = await session.navigate({
       url: CHATGPT_URL,
       waitUntil: 'networkidle2',
@@ -196,49 +251,71 @@ async function run() {
     if (!navResult.success) {
       throw new Error(`Navigation failed: ${navResult.error}`);
     }
-    console.log(`[workflow] Page loaded: ${navResult.data?.title}`);
+    session.tracer.log(`[workflow] Page loaded: ${navResult.data?.title}`);
 
-    // 2. Wait for the page to fully settle
+    // 2. Wait for the page to settle, then check for Cloudflare challenge
     await session.wait({ ms: 3000 });
 
+    if (await isCloudflareChallenge(session)) {
+      if (!headed) {
+        throw new Error(
+          'Cloudflare challenge detected in headless mode. ' +
+          'Run with --headed to solve the challenge manually: npx tsx workflows/example.ts --headed\n' +
+          'Once solved, the session cookie is saved to the profile and subsequent headless runs may pass.',
+        );
+      }
+
+      // Headed mode — give the user time to solve the challenge
+      session.tracer.log('[workflow] Cloudflare challenge detected — please solve it in the browser window...');
+      const resolved = await waitForChallengeResolution(session, CHALLENGE_TIMEOUT);
+      if (!resolved) {
+        throw new Error(
+          `Cloudflare challenge was not resolved within ${CHALLENGE_TIMEOUT / 1000}s. ` +
+          'Please try again and solve the challenge faster.',
+        );
+      }
+      session.tracer.log('[workflow] Challenge resolved, continuing...');
+      await session.wait({ ms: 2000 });
+    }
+
     // 3. Find and click the prompt textarea
-    console.log('[workflow] Looking for prompt input...');
+    session.tracer.log('[workflow] Looking for prompt input...');
     const promptSel = await trySelector(session, PROMPT_SELECTORS, 15_000);
     if (!promptSel) {
       throw new Error('Could not find ChatGPT prompt textarea');
     }
-    console.log(`[workflow] Found prompt input: ${promptSel}`);
+    session.tracer.log(`[workflow] Found prompt input: ${promptSel}`);
 
     // 4. Type the prompt with human-like delays
-    console.log('[workflow] Typing prompt...');
+    session.tracer.log('[workflow] Typing prompt...');
     await session.input({ selector: promptSel, text: PROMPT, timeout: 10_000 });
 
     // 5. Small pause before sending (like a human reviewing their prompt)
     await session.wait({ ms: 1000 });
 
     // 6. Submit — try send button, fall back to Enter key
-    console.log('[workflow] Submitting prompt...');
+    session.tracer.log('[workflow] Submitting prompt...');
     const sendSel = await trySelector(session, SEND_BUTTON_SELECTORS, 5_000);
     if (!sendSel) {
-      console.log('[workflow] Send button not found, pressing Enter...');
+      session.tracer.log('[workflow] Send button not found, pressing Enter...');
       await session.sendKeys({ keys: 'Enter' });
     }
 
     // 7. Wait for ChatGPT to finish responding
-    console.log('[workflow] Waiting for response...');
+    session.tracer.log('[workflow] Waiting for response...');
     await waitForResponse(session, RESPONSE_TIMEOUT);
-    console.log('[workflow] Response complete.');
+    session.tracer.log('[workflow] Response complete.');
 
     // 8. Extract the complete page HTML
     const page = await session.page();
     const fullHtml = await page.content();
 
-    // 9. Save to output directory
-    const outputDir = buildOutputDir();
-    fs.mkdirSync(outputDir, { recursive: true });
-
+    // 9. Save output + traces
     const htmlPath = path.join(outputDir, 'page.html');
     fs.writeFileSync(htmlPath, fullHtml, 'utf-8');
+
+    // Save trace summary
+    session.tracer.save();
 
     const metadata = {
       workflow: WORKFLOW_NAME,
@@ -248,26 +325,29 @@ async function run() {
       startedAt: new Date(startTime).toISOString(),
       completedAt: new Date().toISOString(),
       durationMs: Date.now() - startTime,
+      totalSteps: session.tracer.stepCount,
       outputDir,
-      files: ['page.html', 'metadata.json'],
+      files: ['page.html', 'metadata.json', 'traces/'],
     };
 
     const metadataPath = path.join(outputDir, 'metadata.json');
     fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), 'utf-8');
 
-    console.log(`[workflow] Saved to: ${outputDir}`);
-    console.log(`[workflow]   page.html     (${(fullHtml.length / 1024).toFixed(1)} KB)`);
-    console.log(`[workflow]   metadata.json`);
-    console.log(`[workflow] Duration: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+    session.tracer.log(`[workflow] Saved to: ${outputDir}`);
+    session.tracer.log(`[workflow]   page.html     (${(fullHtml.length / 1024).toFixed(1)} KB)`);
+    session.tracer.log(`[workflow]   metadata.json`);
+    session.tracer.log(`[workflow]   traces/       (${session.tracer.stepCount} steps)`);
+    session.tracer.log(`[workflow] Duration: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
 
   } finally {
-    // 10. Persist session (keeps cookies/localStorage for next run) and close
+    // 10. Save traces (even on error) + persist session and close
+    session.tracer.save();
     await session.close({ persist: true });
-    console.log('[workflow] Session persisted and closed.');
+    session.tracer.log('[workflow] Session persisted and closed.');
   }
 }
 
 run().catch((err) => {
-  console.error('[workflow] Fatal error:', err);
+  console.error('[workflow] Fatal error:', err); // tracer not available here
   process.exit(1);
 });

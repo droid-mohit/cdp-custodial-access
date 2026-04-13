@@ -17,6 +17,8 @@ export interface BrowserControllerConfig {
   screenshotOnError?: boolean;
 }
 
+export type { Tracer } from '../core/tracer.js';
+
 // Define the enriched session type with tool methods
 export interface EnrichedSession extends BrowserSession {
   navigate(params: navTools.NavigateParams): Promise<ToolResult<navTools.NavigateResult>>;
@@ -42,25 +44,48 @@ export interface EnrichedSession extends BrowserSession {
 
 function enrichSession(session: BrowserSession): EnrichedSession {
   const enriched = session as EnrichedSession;
-  enriched.navigate = (params) => navTools.navigate(session, params);
-  enriched.search = (params) => navTools.search(session, params);
-  enriched.goBack = () => navTools.goBack(session);
-  enriched.wait = (params) => navTools.waitTool(session, params);
-  enriched.click = (params) => interactionTools.click(session, params);
-  enriched.input = (params) => interactionTools.input(session, params);
-  enriched.scroll = (params) => interactionTools.scroll(session, params);
-  enriched.sendKeys = (params) => interactionTools.sendKeys(session, params);
-  enriched.findText = (params) => interactionTools.findText(session, params);
-  enriched.uploadFile = (params) => interactionTools.uploadFile(session, params);
-  enriched.getDropdownOptions = (params) => formTools.getDropdownOptions(session, params);
-  enriched.selectDropdown = (params) => formTools.selectDropdown(session, params);
-  enriched.extract = (params) => extractionTools.extract(session, params);
-  enriched.screenshot = (params) => extractionTools.screenshot(session, params);
-  enriched.getPageContent = () => extractionTools.getPageContent(session);
-  enriched.listTabs = () => tabTools.listTabs(session);
-  enriched.switchTab = (params) => tabTools.switchTab(session, params);
-  enriched.closeTab = (params) => tabTools.closeTab(session, params);
-  enriched.done = (params) => doneTools.done(params);
+  const t = session.tracer;
+
+  // Wrap each tool through the tracer for automatic audit trails
+  enriched.navigate = (params) =>
+    t.record('navigate', params, session, () => navTools.navigate(session, params));
+  enriched.search = (params) =>
+    t.record('search', params, session, () => navTools.search(session, params));
+  enriched.goBack = () =>
+    t.record('goBack', {}, session, () => navTools.goBack(session));
+  enriched.wait = (params) =>
+    t.record('wait', params, session, () => navTools.waitTool(session, params));
+  enriched.click = (params) =>
+    t.record('click', params, session, () => interactionTools.click(session, params));
+  enriched.input = (params) =>
+    t.record('input', params, session, () => interactionTools.input(session, params));
+  enriched.scroll = (params) =>
+    t.record('scroll', params, session, () => interactionTools.scroll(session, params));
+  enriched.sendKeys = (params) =>
+    t.record('sendKeys', params, session, () => interactionTools.sendKeys(session, params));
+  enriched.findText = (params) =>
+    t.record('findText', params, session, () => interactionTools.findText(session, params));
+  enriched.uploadFile = (params) =>
+    t.record('uploadFile', params, session, () => interactionTools.uploadFile(session, params));
+  enriched.getDropdownOptions = (params) =>
+    t.record('getDropdownOptions', params, session, () => formTools.getDropdownOptions(session, params));
+  enriched.selectDropdown = (params) =>
+    t.record('selectDropdown', params, session, () => formTools.selectDropdown(session, params));
+  enriched.extract = (params) =>
+    t.record('extract', params, session, () => extractionTools.extract(session, params));
+  enriched.screenshot = (params) =>
+    t.record('screenshot', params, session, () => extractionTools.screenshot(session, params));
+  enriched.getPageContent = () =>
+    t.record('getPageContent', {}, session, () => extractionTools.getPageContent(session));
+  enriched.listTabs = () =>
+    t.record('listTabs', {}, session, () => tabTools.listTabs(session));
+  enriched.switchTab = (params) =>
+    t.record('switchTab', params, session, () => tabTools.switchTab(session, params));
+  enriched.closeTab = (params) =>
+    t.record('closeTab', params, session, () => tabTools.closeTab(session, params));
+  enriched.done = (params) =>
+    t.record('done', params, session, () => doneTools.done(params));
+
   return enriched;
 }
 
