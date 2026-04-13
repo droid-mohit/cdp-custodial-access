@@ -9,6 +9,7 @@ import * as extractionTools from '../tools/extraction.js';
 import * as tabTools from '../tools/tabs.js';
 import * as fileTools from '../tools/files.js';
 import * as doneTools from '../tools/done.js';
+import * as llmExtractTools from '../tools/llm-extract.js';
 
 export interface BrowserControllerConfig {
   stealth?: SessionConfig['stealth'];
@@ -40,6 +41,7 @@ export interface EnrichedSession extends BrowserSession {
   switchTab(params: tabTools.SwitchTabParams): Promise<ToolResult<tabTools.TabInfo>>;
   closeTab(params: tabTools.CloseTabParams): Promise<ToolResult<void>>;
   done(params: doneTools.DoneParams): Promise<ToolResult<doneTools.DoneResult>>;
+  llmExtract(params: llmExtractTools.LLMExtractParams): Promise<ToolResult<llmExtractTools.LLMExtractResult>>;
 }
 
 function enrichSession(session: BrowserSession): EnrichedSession {
@@ -85,7 +87,8 @@ function enrichSession(session: BrowserSession): EnrichedSession {
     t.record('closeTab', params, session, () => tabTools.closeTab(session, params));
   enriched.done = (params) =>
     t.record('done', params, session, () => doneTools.done(params));
-
+  enriched.llmExtract = (params) =>
+    t.record('llmExtract', { instruction: params.instruction, selector: params.selector }, session, () => llmExtractTools.llmExtract(session, params));
   return enriched;
 }
 

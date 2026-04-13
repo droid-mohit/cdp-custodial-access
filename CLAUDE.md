@@ -49,8 +49,14 @@ Core (src/core/)          ← BrowserManager, BrowserSession, ProfileManager
 Puppeteer (puppeteer-extra + stealth plugin)
 ```
 
+**Additional layers:**
+- `src/llm/` — LLM abstraction (factory pattern): OpenAI, Anthropic, Bedrock. Bedrock is an optional dep loaded dynamically.
+- `llmExtract` tool — extracts structured data from collected HTML pages via LLM. Uses tracer HTML snapshots or explicit pages.
+
 **Key patterns:**
 - Tools are standalone functions taking `(session, params)` → `ToolResult<T>`. They never throw — errors return `{ success: false, errorCode }`.
+- Tools are atomic operations. Multi-step use cases (crawling, archiving) belong in `workflows/`, not `src/tools/`.
+- `page.pdf()` only works in headless mode — workflows that generate PDFs must force `headless: true`.
 - `EnrichedSession` is a `BrowserSession` with tool methods attached (e.g., `session.navigate(...)`, `session.click(...)`).
 - Stealth patches come in two flavors: browser-injected JS strings (property/fingerprint patches) and Node.js data generators (behavioral patches for mouse/typing/scroll).
 - ESM project (`"type": "module"`) — all imports use `.js` extensions even for `.ts` source files.

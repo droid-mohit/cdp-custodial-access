@@ -9,3 +9,5 @@ export type {
 export type {
   SessionConfig, LaunchConfig, ConnectConfig, ProfileMetadata,
 } from '../core/types.js';
+export type { LLMConfig, LLMMessage, LLMResponse } from '../llm/types.js';
+export type { LLMExtractParams, LLMExtractResult } from '../tools/llm-extract.js';

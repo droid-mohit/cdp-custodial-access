@@ -12,3 +12,6 @@ export { writeFileTool, readFileTool } from './files.js';
 export type { WriteFileParams, ReadFileParams, ReadFileResult } from './files.js';
 export { done } from './done.js';
 export type { DoneParams, DoneResult } from './done.js';
+
+export { llmExtract } from './llm-extract.js';
+export type { LLMExtractParams, LLMExtractResult } from './llm-extract.js';

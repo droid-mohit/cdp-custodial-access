@@ -8,9 +8,11 @@ A TypeScript SDK and MCP server for stealth browser automation via Chrome DevToo
 - **Human-like interaction** — Bezier curve mouse movement, Gaussian typing delays, momentum scrolling
 - **Persistent profiles** — Browser sessions persist cookies, localStorage, and fingerprints across runs
 - **Audit trails** — Every tool call is traced with screenshots, HTML snapshots, timing, and page state
-- **22 browser tools** — Navigate, click, type, scroll, extract, screenshot, tab management, and more
+- **LLM extraction** — Extract structured data from visited pages using OpenAI, Anthropic, or AWS Bedrock with JSON schema output
+- **23 browser tools** — Navigate, click, type, scroll, extract, screenshot, tab management, LLM extract, and more
 - **MCP server** — Expose all tools to LLM agents via stdio transport
 - **Workflow engine** — Define browser automations as TypeScript scripts with built-in output management
+- **Website archiver** — Crawl a site 1 level deep and generate a merged PDF
 
 ## Quick Start
 
@@ -82,11 +84,35 @@ Debug a workflow using its audit traces:
 | **Interaction** | `click`, `input`, `scroll`, `sendKeys`, `findText`, `uploadFile` |
 | **Forms** | `getDropdownOptions`, `selectDropdown` |
 | **Extraction** | `extract`, `screenshot`, `getPageContent` |
+| **LLM** | `llmExtract` |
 | **Tabs** | `listTabs`, `switchTab`, `closeTab` |
 | **Files** | `writeFile`, `readFile` |
 | **Task** | `done` |
 
 All tools return `ToolResult<T>` with `success`, `data`, `error`, and `errorCode` fields. Tools never throw.
+
+### LLM Extract
+
+Extract structured data from pages visited during a workflow using an LLM:
+
+```typescript
+const result = await session.llmExtract({
+  instruction: 'Extract all product names and prices',
+  schema: {
+    type: 'object',
+    properties: {
+      products: { type: 'array', items: { type: 'object', properties: {
+        name: { type: 'string' },
+        price: { type: 'number' },
+      }}}
+    }
+  },
+  llm: { provider: 'openai', model: 'gpt-4o' },
+  selector: '.product-card',  // optional: narrow to specific elements
+});
+```
+
+Supports OpenAI, Anthropic, and AWS Bedrock. Auto-cleans HTML (strips scripts/styles/nav), chunks across context limits, and merges partial results.
 
 ## Stealth Levels
 
@@ -149,13 +175,22 @@ Output structure:
   metadata.json             # Run metadata
 ```
 
+## Built-in Workflows
+
+| Workflow | Description | Usage |
+|----------|-------------|-------|
+| `example` | Query ChatGPT and save the response HTML | `npx tsx workflows/example.ts --headed` |
+| `yahoo-finance-stocks` | Extract trending stock data from Yahoo Finance | `npx tsx workflows/yahoo-finance-stocks.ts` |
+| `archive-site` | Crawl a site 1 level deep, merge all pages into a single PDF | `npx tsx workflows/archive-site.ts <url> [--max-pages N]` |
+
 ## Project Structure
 
 ```
 src/
   core/       # BrowserManager, BrowserSession, ProfileManager, Tracer
   stealth/    # StealthManager, patches (property, fingerprint, behavioral, network)
-  tools/      # 22 browser tools (navigation, interaction, forms, extraction, tabs, files)
+  tools/      # Browser tools (navigation, interaction, forms, extraction, tabs, files, llm-extract)
+  llm/        # LLM abstraction layer (factory, OpenAI/Anthropic/Bedrock clients, text processing)
   sdk/        # BrowserController, EnrichedSession
   mcp/        # MCP server with stdio transport
 workflows/    # Standalone automation scripts
