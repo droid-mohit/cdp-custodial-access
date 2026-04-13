@@ -106,6 +106,11 @@ Puppeteer (puppeteer-extra + stealth plugin)
 - To debug/improve a workflow from its audit traces: `/improve-workflow {workflow-name} [--runs N]`
 - Every workflow has a `@prompt` tag in its top comment preserving the original user request
 
+## Skills
+
+- Project skills live in `skills/{name}/SKILL.md`, slash commands in `.claude/commands/{name}.md`
+- When adding new tools, update both `skills/generate-workflow/SKILL.md` (tool reference tables) and `skills/improve-workflow/SKILL.md` (failure categories + available tools)
+
 ## Cloudflare Challenges
 
 - `navigate()` reports `success: true` on Cloudflare challenge pages — `networkidle2` resolves on the lightweight challenge HTML. Always check page title after navigation.
