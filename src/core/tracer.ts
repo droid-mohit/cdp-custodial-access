@@ -208,6 +208,11 @@ export class Tracer {
   get stepCount(): number {
     return this.stepCounter;
   }
+
+  /** Get the traces directory path (null if not set) */
+  getTracesDir(): string | null {
+    return this.tracesDir;
+  }
 }
 
 /** Remove potentially sensitive values from params for logging */

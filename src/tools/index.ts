@@ -12,3 +12,15 @@ export { writeFileTool, readFileTool } from './files.js';
 export type { WriteFileParams, ReadFileParams, ReadFileResult } from './files.js';
 export { done } from './done.js';
 export type { DoneParams, DoneResult } from './done.js';
+
+export { llmExtract } from './llm-extract.js';
+export type { LLMExtractParams, LLMExtractResult } from './llm-extract.js';
+
+export { checkLogin, waitForLogin, exportCookies, importCookies } from './session-auth.js';
+export type { CheckLoginParams, CheckLoginResult, WaitForLoginParams, WaitForLoginResult, ExportCookiesParams, ExportCookiesResult, ImportCookiesParams, ImportCookiesResult, ExportedCookie } from './session-auth.js';
+
+export { fetchSitemap } from './sitemap.js';
+export type { FetchSitemapParams, FetchSitemapResult, SitemapEntry } from './sitemap.js';
+
+export { fetchRobots, isUrlAllowed } from './robots.js';
+export type { FetchRobotsParams, FetchRobotsResult, RobotsRule, IsAllowedParams } from './robots.js';

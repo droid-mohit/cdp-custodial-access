@@ -89,6 +89,10 @@ Compare each run against the `@prompt` (intended behavior):
 | All steps succeed but output doesn't match `@prompt` | Logic issue — workflow does the wrong thing | Restructure workflow steps |
 | Abnormally long `durationMs` on a step | Page is slow to load or element is slow to appear | Increase timeout, add content stabilization |
 | Browser console errors around a failing step | JS exception, CSP block, or failed network request on the page | Check if the page's JS is broken or if a required resource was blocked |
+| `checkLogin` returns `isLoggedIn: false` | Session expired, cookies invalidated | Re-run with `--headed` to re-login; ensure `session.close({ persist: true })` is in finally block |
+| Redirect to login page after navigation | Not authenticated or session expired | Add login gate pattern: `checkLogin()` → `waitForLogin()` in headed mode |
+| `llmExtract` returns empty/wrong data | Bad instruction, wrong selector, or LLM hallucinating | Check HTML snapshots to verify content exists; refine `selector` or `instruction` |
+| Cloudflare challenge page in trace screenshots | Bot detection triggered | Ensure stealth level is `'none'`; run `--headed` once to solve challenge and persist cookie |
 
 ### Step 4: Present Findings
 
@@ -128,3 +132,17 @@ After user approval:
 - **Cross-reference with @prompt** — the original intent is the ground truth. A workflow that runs without errors but doesn't achieve the prompt's goal is still broken.
 - **Fix root causes** — don't just increase timeouts blindly. If a selector is wrong, fix the selector. If the site changed its markup, update the selectors.
 - **Preserve working parts** — if steps 1-5 work fine and step 6 fails, don't rewrite the whole workflow.
+- **Check auth state** — if traces show redirects to login pages or missing content, the issue is likely expired authentication, not broken selectors.
+- **Check run context** — `trace.json` → `context` shows headed/headless, stealth level, locale. A workflow that works headed but fails headless is usually a bot detection or auth issue.
+
+## Available Tools for Fixes
+
+When proposing fixes, these tools are available on the session:
+
+**Auth:** `checkLogin`, `waitForLogin`, `exportCookies`, `importCookies`
+**Extraction:** `extract`, `getPageContent`, `llmExtract` (LLM-powered, structured output via JSON schema)
+**Site Discovery:** `fetchSitemap`, `fetchRobots`, `isUrlAllowed` (session-independent, import from tools)
+**Interaction:** `click`, `input`, `scroll`, `sendKeys`, `findText`, `uploadFile`
+**Navigation:** `navigate`, `search`, `goBack`, `wait`
+**Forms:** `getDropdownOptions`, `selectDropdown`
+**Tabs:** `listTabs`, `switchTab`, `closeTab`

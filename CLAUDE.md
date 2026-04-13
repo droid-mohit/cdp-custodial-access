@@ -49,8 +49,16 @@ Core (src/core/)          ← BrowserManager, BrowserSession, ProfileManager
 Puppeteer (puppeteer-extra + stealth plugin)
 ```
 
+**Additional layers:**
+- `src/llm/` — LLM abstraction (factory pattern): OpenAI, Anthropic, Bedrock. Bedrock is an optional dep loaded dynamically.
+- `llmExtract` tool — extracts structured data from collected HTML pages via LLM. Uses tracer HTML snapshots or explicit pages.
+- `fetchSitemap`/`fetchRobots` tools — pure HTTP, no browser session needed. Pattern for non-browser utility tools.
+
 **Key patterns:**
 - Tools are standalone functions taking `(session, params)` → `ToolResult<T>`. They never throw — errors return `{ success: false, errorCode }`.
+- Some tools are session-independent (sitemap, robots) — they take only params, no session. These use `fetch()` directly.
+- Tools are atomic operations. Multi-step use cases (crawling, archiving) belong in `workflows/`, not `src/tools/`.
+- `page.pdf()` only works in headless mode — workflows that generate PDFs must force `headless: true`.
 - `EnrichedSession` is a `BrowserSession` with tool methods attached (e.g., `session.navigate(...)`, `session.click(...)`).
 - Stealth patches come in two flavors: browser-injected JS strings (property/fingerprint patches) and Node.js data generators (behavioral patches for mouse/typing/scroll).
 - ESM project (`"type": "module"`) — all imports use `.js` extensions even for `.ts` source files.
@@ -72,6 +80,13 @@ Puppeteer (puppeteer-extra + stealth plugin)
 - ProfileManager API: `.listWorkflows()`, `.listProfiles(workflow)`, `.deleteProfile(workflow, profile)`, `.loadMetadata(workflow, profile)`
 - Persistent profiles cause Chrome to restore previous tabs on launch. Close extra tabs before starting: `const pages = await session.pages(); for (let i = 1; i < pages.length; i++) await pages[i].close();`
 
+## Authentication
+
+- Auth tools: `checkLogin` (verify session), `waitForLogin` (headed manual login), `exportCookies`/`importCookies` (portable JSON)
+- Login persists via Chrome profile — first run: login manually with `--headed`, subsequent runs: cookies loaded automatically
+- Pattern for authenticated workflows: navigate → `checkLogin()` → if expired, `waitForLogin()` in headed mode or throw in headless
+- `exportCookies` uses CDP `Network.getAllCookies` (all domains), not `page.cookies()` (current page only)
+
 ## Audit Trails
 
 - Every tool call is automatically traced via `session.tracer` (baked into `enrichSession()`)
@@ -91,6 +106,11 @@ Puppeteer (puppeteer-extra + stealth plugin)
 - To debug/improve a workflow from its audit traces: `/improve-workflow {workflow-name} [--runs N]`
 - Every workflow has a `@prompt` tag in its top comment preserving the original user request
 
+## Skills
+
+- Project skills live in `skills/{name}/SKILL.md`, slash commands in `.claude/commands/{name}.md`
+- When adding new tools, update both `skills/generate-workflow/SKILL.md` (tool reference tables) and `skills/improve-workflow/SKILL.md` (failure categories + available tools)
+
 ## Cloudflare Challenges
 
 - `navigate()` reports `success: true` on Cloudflare challenge pages — `networkidle2` resolves on the lightweight challenge HTML. Always check page title after navigation.
@@ -100,4 +120,4 @@ Puppeteer (puppeteer-extra + stealth plugin)
 
 ## Instructions
 
-1. Never commit anything to git. All changes will be reviewed by a developer and added to git by the developer.
+1. All changes will be reviewed by a developer before merging. Create feature branches for non-trivial changes.

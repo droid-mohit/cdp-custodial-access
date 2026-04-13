@@ -1,43 +1,29 @@
-# Local data files
-downloads/
-local_scripts/*
-data/*
-
-# Linter
-.ruff*
-
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
-
-# Virtual environments
-.venv
-.venv*
-venv*
-
-# Node
+# Dependencies
 node_modules/
+
+# Build output
+dist/
 
 # Environment variables
 *.env
+.env.*
 
 # IDE and editor files
-.idea
+.idea/
+.vscode/
+*.swp
+*.swo
 *.DS_Store
 
-# Folders for inputs-outputs
-pipeline/input_files/
-pipeline/output_files/
+# OS files
+Thumbs.db
 
-# Browser automation runs (session cookies + output)
-scripts/runs/session.json
-scripts/runs/*/
+# Test coverage
+coverage/
 
-# Custom ignore files
-scripted_workflow/output
+# Local Claude Code settings (commands/ should be committed)
+.claude/settings.local.json
 
-/captured_audio
+# Runtime data (profiles, runs, downloads)
+downloads/
+data/
