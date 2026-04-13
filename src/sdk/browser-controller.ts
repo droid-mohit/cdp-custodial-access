@@ -10,6 +10,7 @@ import * as tabTools from '../tools/tabs.js';
 import * as fileTools from '../tools/files.js';
 import * as doneTools from '../tools/done.js';
 import * as llmExtractTools from '../tools/llm-extract.js';
+import * as authTools from '../tools/session-auth.js';
 
 export interface BrowserControllerConfig {
   stealth?: SessionConfig['stealth'];
@@ -42,6 +43,10 @@ export interface EnrichedSession extends BrowserSession {
   closeTab(params: tabTools.CloseTabParams): Promise<ToolResult<void>>;
   done(params: doneTools.DoneParams): Promise<ToolResult<doneTools.DoneResult>>;
   llmExtract(params: llmExtractTools.LLMExtractParams): Promise<ToolResult<llmExtractTools.LLMExtractResult>>;
+  checkLogin(params: authTools.CheckLoginParams): Promise<ToolResult<authTools.CheckLoginResult>>;
+  waitForLogin(params: authTools.WaitForLoginParams): Promise<ToolResult<authTools.WaitForLoginResult>>;
+  exportCookies(params?: authTools.ExportCookiesParams): Promise<ToolResult<authTools.ExportCookiesResult>>;
+  importCookies(params: authTools.ImportCookiesParams): Promise<ToolResult<authTools.ImportCookiesResult>>;
 }
 
 function enrichSession(session: BrowserSession): EnrichedSession {
@@ -89,6 +94,14 @@ function enrichSession(session: BrowserSession): EnrichedSession {
     t.record('done', params, session, () => doneTools.done(params));
   enriched.llmExtract = (params) =>
     t.record('llmExtract', { instruction: params.instruction, selector: params.selector }, session, () => llmExtractTools.llmExtract(session, params));
+  enriched.checkLogin = (params) =>
+    t.record('checkLogin', params, session, () => authTools.checkLogin(session, params));
+  enriched.waitForLogin = (params) =>
+    t.record('waitForLogin', params, session, () => authTools.waitForLogin(session, params));
+  enriched.exportCookies = (params) =>
+    t.record('exportCookies', params ?? {}, session, () => authTools.exportCookies(session, params));
+  enriched.importCookies = (params) =>
+    t.record('importCookies', { count: params.cookies.length }, session, () => authTools.importCookies(session, params));
   return enriched;
 }
 

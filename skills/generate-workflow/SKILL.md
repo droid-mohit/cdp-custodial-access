@@ -132,6 +132,7 @@ All tools are methods on `session` (EnrichedSession). They return `ToolResult<T>
 | `session.screenshot({fullPage?})` | | Capture as base64 PNG |
 | `session.getPageContent()` | — | Clean text + title + URL |
 | `(await session.page()).content()` | — | Raw full HTML (escape hatch) |
+| `session.llmExtract({instruction, schema?, llm, selector?})` | `llm: {provider, model}`, JSON schema for structured output | Extract structured data from visited pages via LLM |
 
 ### Tabs
 | Method | Params | Description |
@@ -139,6 +140,21 @@ All tools are methods on `session` (EnrichedSession). They return `ToolResult<T>
 | `session.listTabs()` | — | All tabs with URLs/titles |
 | `session.switchTab({index})` | 0-based index | Switch to tab |
 | `session.closeTab({index?})` | | Close tab |
+
+### Authentication
+| Method | Params | Description |
+|--------|--------|-------------|
+| `session.checkLogin({loggedInSelector?, loggedOutSelector?, checkUrl?})` | | Verify if session is authenticated |
+| `session.waitForLogin({loginUrl?, successSelector?, timeout?})` | | Wait for manual login in headed mode |
+| `session.exportCookies({domains?})` | | Export all cookies as portable JSON |
+| `session.importCookies({cookies})` | | Import cookies from exported JSON |
+
+### Site Discovery (session-independent)
+| Function | Params | Description |
+|----------|--------|-------------|
+| `fetchSitemap({url, maxEntries?})` | Import from `../src/tools/sitemap.js` | Parse sitemap.xml, handles sitemap index |
+| `fetchRobots({url})` | Import from `../src/tools/robots.js` | Parse robots.txt rules + sitemap URLs |
+| `isUrlAllowed({url, rules})` | Import from `../src/tools/robots.js` | Check if URL is allowed by robots.txt |
 
 ## Conventions
 
@@ -150,6 +166,7 @@ All tools are methods on `session` (EnrichedSession). They return `ToolResult<T>
 - **Output**: Always save `metadata.json` alongside extracted data. Include workflow name, timestamps, duration, URL, and file list.
 - **Logging**: Use `console.log('[workflow] ...')` prefix for all output.
 - **Error handling**: Check `result.success` after each tool call. Throw on critical failures (navigation), warn on non-critical ones.
+- **Auth workflows**: If the use case involves a site requiring login, add the login gate pattern (see below). First run with `--headed` for manual login, subsequent runs use persisted cookies.
 
 ## Selector Resilience Pattern
 
@@ -194,6 +211,44 @@ async function waitForContent(session, timeoutMs) {
   }
 }
 ```
+
+## Authenticated Workflow Pattern
+
+For sites requiring login (LinkedIn, Gmail, etc.), add a login gate after launch:
+
+```typescript
+// After launch + close extra tabs...
+
+// Navigate to a page that requires auth
+await session.navigate({ url: 'https://linkedin.com/feed' });
+await session.wait({ ms: 2000 });
+
+// Check if session is still valid
+const loginCheck = await session.checkLogin({
+  checkUrl: 'https://linkedin.com/feed',
+  loggedInSelector: '.feed-identity-module',
+});
+
+if (!loginCheck.data?.isLoggedIn) {
+  if (!headed) {
+    throw new Error(
+      'Not logged in. Run with --headed to login:\n' +
+      `  npx tsx workflows/${WORKFLOW_NAME}.ts --headed`
+    );
+  }
+  // Headed mode — let user login manually
+  console.log('[workflow] Please log in via the browser window...');
+  await session.navigate({ url: 'https://linkedin.com/login' });
+  await session.waitForLogin({
+    loginUrl: 'linkedin.com/login',
+    successSelector: '.feed-identity-module',
+    timeout: 120_000,
+  });
+  console.log('[workflow] Login successful!');
+}
+```
+
+The profile persists cookies automatically via `session.close({ persist: true })`. After the first headed login, subsequent headless runs skip the login entirely.
 
 ## Reference Workflow
 

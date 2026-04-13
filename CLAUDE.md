@@ -80,6 +80,13 @@ Puppeteer (puppeteer-extra + stealth plugin)
 - ProfileManager API: `.listWorkflows()`, `.listProfiles(workflow)`, `.deleteProfile(workflow, profile)`, `.loadMetadata(workflow, profile)`
 - Persistent profiles cause Chrome to restore previous tabs on launch. Close extra tabs before starting: `const pages = await session.pages(); for (let i = 1; i < pages.length; i++) await pages[i].close();`
 
+## Authentication
+
+- Auth tools: `checkLogin` (verify session), `waitForLogin` (headed manual login), `exportCookies`/`importCookies` (portable JSON)
+- Login persists via Chrome profile — first run: login manually with `--headed`, subsequent runs: cookies loaded automatically
+- Pattern for authenticated workflows: navigate → `checkLogin()` → if expired, `waitForLogin()` in headed mode or throw in headless
+- `exportCookies` uses CDP `Network.getAllCookies` (all domains), not `page.cookies()` (current page only)
+
 ## Audit Trails
 
 - Every tool call is automatically traced via `session.tracer` (baked into `enrichSession()`)
