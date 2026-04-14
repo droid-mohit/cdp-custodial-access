@@ -59,6 +59,7 @@ export class Tracer {
   private tracesDir: string | null = null;
   private runContext: TraceRunContext | null = null;
   private networkTracer: NetworkTracer | null = null;
+  private muted = false;
 
   /** Link a NetworkTracer so its HAR is saved alongside trace.json */
   setNetworkTracer(tracer: NetworkTracer): void {
@@ -69,6 +70,12 @@ export class Tracer {
   setRunContext(context: TraceRunContext): void {
     this.runContext = context;
   }
+
+  /** Suppress console output (logs still captured in trace). Use during interactive prompts. */
+  mute(): void { this.muted = true; }
+
+  /** Resume console output. */
+  unmute(): void { this.muted = false; }
 
   /**
    * Log a message and store it in the trace. Also prints to stdout/stderr
@@ -84,6 +91,9 @@ export class Tracer {
       message,
     };
     this.logs.push(entry);
+
+    // Skip console output when muted (e.g., during interactive prompts)
+    if (this.muted) return;
 
     // Tee to console so the user still sees real-time output
     const prefix = source === 'browser' ? '[browser]' : '';

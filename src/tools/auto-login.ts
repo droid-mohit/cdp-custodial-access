@@ -251,6 +251,10 @@ export async function promptCredentialSave(
   const profile = params.profile ?? 'default';
   const store = new CredentialStore();
 
+  // Mute browser console output during interactive prompt to prevent
+  // background network errors from flooding over stdin prompts
+  session.tracer.mute();
+
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -347,5 +351,6 @@ export async function promptCredentialSave(
     return { success: false, error: `Credential save failed: ${msg}` };
   } finally {
     rl.close();
+    session.tracer.unmute();
   }
 }
