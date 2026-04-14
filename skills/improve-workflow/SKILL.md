@@ -60,6 +60,7 @@ For each of the last N runs, read:
 3. **Screenshots** (`traces/step-*.png`) — visual state at key steps. Read the screenshots to see what the page looked like.
 4. **HTML snapshots** (`traces/step-*.html`) — DOM state. Read selectively when you need to check what selectors would match.
 5. **Logs** (inside `trace.json` → `logs[]`) — each entry has `timestamp`, `source` (`workflow` or `browser`), `level` (`info`/`warn`/`error`), and `message`. Browser console errors often reveal JS exceptions or network failures not visible in tool results.
+6. **Network HAR** (`traces/network.har`, if present) — full HTTP request/response log in HAR 1.2 format. Check for failed requests (status 0), blocked resources, unexpected redirects, or API errors. Only present if the workflow was run with `--network-trace`.
 
 ### Step 3: Diagnose
 
@@ -89,10 +90,13 @@ Compare each run against the `@prompt` (intended behavior):
 | All steps succeed but output doesn't match `@prompt` | Logic issue — workflow does the wrong thing | Restructure workflow steps |
 | Abnormally long `durationMs` on a step | Page is slow to load or element is slow to appear | Increase timeout, add content stabilization |
 | Browser console errors around a failing step | JS exception, CSP block, or failed network request on the page | Check if the page's JS is broken or if a required resource was blocked |
-| `checkLogin` returns `isLoggedIn: false` | Session expired, cookies invalidated | Re-run with `--headed` to re-login; ensure `session.close({ persist: true })` is in finally block |
-| Redirect to login page after navigation | Not authenticated or session expired | Add login gate pattern: `checkLogin()` → `waitForLogin()` in headed mode |
+| `checkLogin` returns `isLoggedIn: false` | Session expired, cookies invalidated | Use `autoLogin` to auto-replay stored credentials; if no credentials stored, re-run with `--headed` to login and save |
+| Redirect to login page after navigation | Not authenticated or session expired | Replace manual login gate with `autoLogin({loginUrl, successSelector, workflow, profile})` pattern |
 | `llmExtract` returns empty/wrong data | Bad instruction, wrong selector, or LLM hallucinating | Check HTML snapshots to verify content exists; refine `selector` or `instruction` |
 | Cloudflare challenge page in trace screenshots | Bot detection triggered | Ensure stealth level is `'none'`; run `--headed` once to solve challenge and persist cookie |
+| `autoLogin` returns `existing-session` but page is a challenge/checkpoint | Site triggered post-auth security challenge (device verification, app confirmation) | Add post-login verification: check URL for `/checkpoint/` or title for "Challenge"/"Verify". In headed mode, poll and wait for user resolution; in headless, throw with `--headed` suggestion. See `ensureFeedLoaded()` in `linkedin-feed.ts` |
+| All steps succeed, extracted content is a login/challenge page | `autoLogin` short-circuited on stale session; workflow didn't verify page state | Add page-state verification after `autoLogin` and before extraction. Check URL/title, not just tool success |
+| Credentials never prompted/saved despite manual interaction | `promptCredentialSave` only triggers on `promptSaveAfter` flag | Also trigger when `CredentialStore.exists(workflow, profile)` is false — proactive save on first run |
 
 ### Step 4: Present Findings
 
@@ -145,7 +149,7 @@ After user approval:
 
 When proposing fixes, these tools are available on the session:
 
-**Auth:** `checkLogin`, `waitForLogin`, `exportCookies`, `importCookies`
+**Auth:** `autoLogin`, `promptCredentialSave`, `checkLogin`, `waitForLogin`, `exportCookies`, `importCookies`
 **Extraction:** `extract`, `getPageContent`, `llmExtract` (LLM-powered, structured output via JSON schema)
 **Site Discovery:** `fetchSitemap`, `fetchRobots`, `isUrlAllowed` (session-independent, import from tools)
 **Interaction:** `click`, `input`, `scroll`, `sendKeys`, `findText`, `uploadFile`

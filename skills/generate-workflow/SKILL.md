@@ -60,6 +60,11 @@ function buildOutputDir(): string {
 
 async function run() {
   const headed = process.argv.includes('--headed');
+  const networkTrace = process.argv.includes('--network-trace=full')
+    ? 'full' as const
+    : process.argv.includes('--network-trace')
+      ? true
+      : undefined;
   const startTime = Date.now();
   console.log(`[workflow] Starting: ${WORKFLOW_NAME}`);
 
@@ -73,6 +78,7 @@ async function run() {
     headless: !headed,
     locale: 'en-US',
     timezone: 'America/New_York',
+    networkTrace,
   });
 
   // Set up audit trail
@@ -145,6 +151,8 @@ All tools are methods on `session` (EnrichedSession). They return `ToolResult<T>
 ### Authentication
 | Method | Params | Description |
 |--------|--------|-------------|
+| `session.autoLogin({loginUrl, successSelector, workflow, profile?, timeout?})` | | Auto-login: check session → replay stored credentials → fall back to manual |
+| `session.promptCredentialSave({loginUrl, workflow, profile?})` | | Post-workflow CLI prompt to capture and store credentials |
 | `session.checkLogin({loggedInSelector?, loggedOutSelector?, checkUrl?})` | | Verify if session is authenticated |
 | `session.waitForLogin({loginUrl?, successSelector?, timeout?})` | | Wait for manual login in headed mode |
 | `session.exportCookies({domains?})` | | Export all cookies as portable JSON |
@@ -215,41 +223,69 @@ async function waitForContent(session, timeoutMs) {
 
 ## Authenticated Workflow Pattern
 
-For sites requiring login (LinkedIn, Gmail, etc.), add a login gate after launch:
+For sites requiring login (LinkedIn, Gmail, etc.), use `autoLogin` which handles the full flow: check existing session → replay stored credentials → fall back to manual login in headed mode → prompt to save credentials after.
+
+**Important:** `autoLogin` can report `existing-session` success even when the site triggers a post-auth challenge (device verification, app confirmation). Always verify the target page actually loaded after `autoLogin` before proceeding with workflow logic.
 
 ```typescript
+import { CredentialStore } from '../../src/core/credential-store.js';
+
 // After launch + close extra tabs...
 
-// Navigate to a page that requires auth
-await session.navigate({ url: 'https://linkedin.com/feed' });
-await session.wait({ ms: 2000 });
+// Declare loginResult outside try so it's accessible in finally
+let loginResult: Awaited<ReturnType<typeof session.autoLogin>> | undefined;
+let challengeEncountered = false;
 
-// Check if session is still valid
-const loginCheck = await session.checkLogin({
-  checkUrl: 'https://linkedin.com/feed',
-  loggedInSelector: '.feed-identity-module',
-});
+try {
+  // Navigate to a page that requires auth
+  await session.navigate({ url: 'https://linkedin.com/feed' });
+  await session.wait({ ms: 2000 });
 
-if (!loginCheck.data?.isLoggedIn) {
-  if (!headed) {
-    throw new Error(
-      'Not logged in. Run with --headed to login:\n' +
-      `  npx tsx workflows/${WORKFLOW_NAME}.ts --headed`
-    );
-  }
-  // Headed mode — let user login manually
-  console.log('[workflow] Please log in via the browser window...');
-  await session.navigate({ url: 'https://linkedin.com/login' });
-  await session.waitForLogin({
-    loginUrl: 'linkedin.com/login',
+  // Auto-login: checks session → tries stored credentials → falls back to manual
+  loginResult = await session.autoLogin({
+    loginUrl: 'https://linkedin.com/login',
     successSelector: '.feed-identity-module',
-    timeout: 120_000,
+    workflow: WORKFLOW_NAME,
+    profile,
   });
-  console.log('[workflow] Login successful!');
+
+  if (!loginResult.success) {
+    throw new Error(`Login failed: ${loginResult.error}`);
+  }
+
+  // Let the page settle after login
+  if (loginResult.data?.method !== 'existing-session') {
+    await session.wait({ ms: 5000 });
+  }
+
+  // IMPORTANT: Verify target page loaded (detect post-auth challenges)
+  // Check URL for /checkpoint/ or /challenge, title for "Challenge"/"Verify"
+  // In headed mode: poll and wait for user to resolve challenge
+  // In headless mode: throw with --headed suggestion
+  // See ensureFeedLoaded() in linkedin-feed.ts for full pattern
+
+  // ... workflow logic ...
+
+} finally {
+  // Prompt to save credentials if:
+  //  - manual login was used, or
+  //  - a challenge required manual interaction, or
+  //  - no credentials are stored yet (proactive save for future headless runs)
+  const store = new CredentialStore();
+  const hasStoredCreds = store.exists(WORKFLOW_NAME, profile);
+  if (loginResult?.data?.promptSaveAfter || challengeEncountered || !hasStoredCreds) {
+    await session.promptCredentialSave({
+      loginUrl: 'https://linkedin.com/login',
+      workflow: WORKFLOW_NAME,
+      profile,
+    });
+  }
+  session.tracer.save();
+  await session.close({ persist: true });
 }
 ```
 
-The profile persists cookies automatically via `session.close({ persist: true })`. After the first headed login, subsequent headless runs skip the login entirely.
+The profile persists cookies automatically via `session.close({ persist: true })`. Credentials are stored at `~/.cdp-custodial-access/credentials/{workflow}/{profile}.json` and replayed automatically on session expiry.
 
 ## Registry Entry
 

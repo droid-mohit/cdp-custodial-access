@@ -3,11 +3,14 @@ import type { StealthManager } from '../stealth/index.js';
 import type { FingerprintProfile, ProxyConfig } from '../types.js';
 import type { ProfileManager } from './profile-manager.js';
 import { Tracer } from './tracer.js';
+import { NetworkTracer } from './network-tracer.js';
 import { randomUUID } from 'node:crypto';
 
 export class BrowserSession {
   public readonly id: string;
   public readonly tracer: Tracer;
+  public readonly networkTracer?: NetworkTracer;
+  public readonly headless: boolean;
   private readonly capturedPages = new WeakSet<Page>();
 
   constructor(
@@ -18,9 +21,16 @@ export class BrowserSession {
     private readonly profileName?: string,
     private readonly profileManager?: ProfileManager,
     private readonly proxy?: ProxyConfig,
+    networkTracer?: NetworkTracer,
+    headless = true,
   ) {
     this.id = randomUUID();
     this.tracer = new Tracer();
+    this.networkTracer = networkTracer;
+    this.headless = headless;
+    if (this.networkTracer) {
+      this.tracer.setNetworkTracer(this.networkTracer);
+    }
   }
 
   /** Hook a page's console events into the tracer */
@@ -37,10 +47,17 @@ export class BrowserSession {
     });
   }
 
+  /** Hook a page's network events into the network tracer */
+  private async captureNetwork(page: Page): Promise<void> {
+    if (!this.networkTracer) return;
+    await this.networkTracer.attachToPage(page);
+  }
+
   async page(): Promise<Page> {
     const pages = await this.browser.pages();
     const p = pages[0];
     this.captureConsole(p);
+    await this.captureNetwork(p);
     return p;
   }
 
@@ -52,6 +69,7 @@ export class BrowserSession {
     const page = await this.browser.newPage();
     await this.stealthManager.applyToPage(page, this.fingerprint);
     this.captureConsole(page);
+    await this.captureNetwork(page);
     return page;
   }
 

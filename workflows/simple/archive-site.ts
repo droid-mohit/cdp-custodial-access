@@ -63,6 +63,11 @@ function buildOutputDir(): string {
 
 async function run() {
   const { url, headed, maxPages } = parseArgs();
+  const networkTrace = process.argv.includes('--network-trace=full')
+    ? 'full' as const
+    : process.argv.includes('--network-trace')
+      ? true
+      : undefined;
   const startTime = Date.now();
 
   // PDF generation requires headless mode
@@ -84,6 +89,7 @@ async function run() {
     headless: true, // PDF requires headless
     locale: 'en-US',
     timezone: 'America/New_York',
+    networkTrace,
   });
 
   const outputDir = buildOutputDir();
@@ -268,12 +274,16 @@ async function run() {
       completedAt: new Date().toISOString(),
       durationMs: Date.now() - startTime,
       totalSteps: session.tracer.stepCount,
+      ...(networkTrace ? {
+        networkTrace: true,
+        networkEntries: session.networkTracer?.getEntryCount() ?? 0,
+      } : {}),
       pagesArchived: captured.length,
       pagesFailed: failed.length,
       archived: captured.map((c) => ({ url: c.url, title: c.title })),
       failed,
       outputDir,
-      files: ['archive.pdf', 'metadata.json', 'traces/'],
+      files: ['archive.pdf', 'metadata.json', 'traces/', ...(networkTrace ? ['traces/network.har'] : [])],
     };
 
     fs.writeFileSync(path.join(outputDir, 'metadata.json'), JSON.stringify(metadata, null, 2));

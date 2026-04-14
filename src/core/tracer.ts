@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { BrowserSession } from './browser-session.js';
 import type { ToolResult } from '../types.js';
+import type { NetworkTracer } from './network-tracer.js';
 
 /** Tools that get an automatic screenshot after execution */
 const SCREENSHOT_TOOLS = new Set([
@@ -57,11 +58,24 @@ export class Tracer {
   private stepCounter = 0;
   private tracesDir: string | null = null;
   private runContext: TraceRunContext | null = null;
+  private networkTracer: NetworkTracer | null = null;
+  private muted = false;
+
+  /** Link a NetworkTracer so its HAR is saved alongside trace.json */
+  setNetworkTracer(tracer: NetworkTracer): void {
+    this.networkTracer = tracer;
+  }
 
   /** Set run-level context (headed/headless, profile, stealth, etc.) */
   setRunContext(context: TraceRunContext): void {
     this.runContext = context;
   }
+
+  /** Suppress console output (logs still captured in trace). Use during interactive prompts. */
+  mute(): void { this.muted = true; }
+
+  /** Resume console output. */
+  unmute(): void { this.muted = false; }
 
   /**
    * Log a message and store it in the trace. Also prints to stdout/stderr
@@ -77,6 +91,9 @@ export class Tracer {
       message,
     };
     this.logs.push(entry);
+
+    // Skip console output when muted (e.g., during interactive prompts)
+    if (this.muted) return;
 
     // Tee to console so the user still sees real-time output
     const prefix = source === 'browser' ? '[browser]' : '';
@@ -202,6 +219,11 @@ export class Tracer {
       JSON.stringify(output, null, 2),
       'utf-8',
     );
+
+    // Save network HAR if network tracing is active
+    if (this.networkTracer) {
+      this.networkTracer.save(this.tracesDir);
+    }
   }
 
   /** Total number of steps recorded */

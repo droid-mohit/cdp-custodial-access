@@ -6,7 +6,7 @@ Automate any website with a real browser — stealth built in, audit trails incl
 
 - **Browse like a human** — clicks, types, and scrolls with realistic mouse movements and typing delays
 - **Stay undetected** — built-in stealth defeats bot detection on sites like ChatGPT, LinkedIn, and Cloudflare-protected pages
-- **Remember sessions** — login once, and cookies persist across runs automatically
+- **Remember sessions** — login once, and cookies persist across runs. If sessions expire, saved credentials are replayed automatically
 - **Full audit trail** — every action is recorded with screenshots, HTML snapshots, and timing
 
 ## Three Ways to Use It
@@ -135,25 +135,41 @@ Every workflow run is automatically recorded:
     trace.json            # What happened at each step
     step-001-navigate.png # Screenshot after navigation
     step-002-click.png    # Screenshot after click
+    network.har           # All HTTP requests/responses (opt-in)
     ...
   metadata.json           # Run summary (duration, success, files)
 ```
 
-## Authentication
+### Network Tracing
 
-Sites that require login (LinkedIn, ChatGPT, etc.) work through persistent browser profiles:
-
-1. First run: use `--headed` to log in manually in the browser window
-2. Subsequent runs: cookies are loaded automatically — no login needed
+Capture every HTTP request and response as a standard HAR file:
 
 ```bash
-cdp run linkedin-feed --headed    # First time: log in manually
-cdp run linkedin-feed             # After that: runs headless automatically
+cdp run linkedin-feed --network-trace          # Headers + metadata only
+cdp run linkedin-feed --network-trace=full     # Include response bodies
 ```
+
+The HAR file can be opened in Chrome DevTools, Firefox, or any HAR viewer for debugging.
+
+## Authentication
+
+Sites that require login (LinkedIn, ChatGPT, etc.) work automatically:
+
+1. **First run:** use `--headed` to log in manually. After the workflow completes, you'll be asked to save your credentials
+2. **Next runs:** cookies are loaded automatically — no login needed
+3. **Session expired?** Saved credentials are replayed to log back in without manual intervention
+4. **2FA sites:** credentials are auto-filled, then you complete the OTP step manually
+
+```bash
+cdp run linkedin-feed --headed    # First time: log in, save credentials
+cdp run linkedin-feed             # After that: auto-login if session expires
+```
+
+Credentials are stored locally at `~/.cdp-custodial-access/credentials/` — one file per workflow. They never leave your machine.
 
 ## Available Browser Tools
 
-23 tools organized by what they do:
+25 tools organized by what they do:
 
 | Category | Tools |
 |----------|-------|
@@ -162,7 +178,7 @@ cdp run linkedin-feed             # After that: runs headless automatically
 | **Forms** | `getDropdownOptions`, `selectDropdown` |
 | **Extract** | `extract`, `screenshot`, `getPageContent`, `llmExtract` |
 | **Tabs** | `listTabs`, `switchTab`, `closeTab` |
-| **Auth** | `checkLogin`, `waitForLogin`, `exportCookies`, `importCookies` |
+| **Auth** | `autoLogin`, `promptCredentialSave`, `checkLogin`, `waitForLogin`, `exportCookies`, `importCookies` |
 | **Site Discovery** | `fetchSitemap`, `fetchRobots` |
 
 ## Architecture & Development

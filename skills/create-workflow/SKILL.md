@@ -70,7 +70,7 @@ Apply targeted fixes based on failure type:
 | Wrong selectors (`ELEMENT_NOT_FOUND`) | Read the HTML snapshot at the failing step. Find the correct CSS/XPath selector from the actual DOM. Update the workflow code. |
 | Timing issues (elements not loaded) | Add or increase `session.wait({ ms })` calls. Increase `timeout` params on tool calls. |
 | Navigation failures | Check URL is correct. Try different `waitUntil` strategy (`'domcontentloaded'` vs `'networkidle2'`). |
-| Auth walls (redirect to login) | Add the login gate pattern from the generate-workflow template. |
+| Auth walls (redirect to login) | Add `autoLogin` pattern from the generate-workflow template (auto-replays stored credentials, falls back to manual). |
 | Empty extractions | Read the HTML snapshot. Refine the `selector` to target the right DOM element. |
 | Cloudflare challenge | Note in final report that first run needs `--headed`. Ensure stealth level is `'none'`. |
 

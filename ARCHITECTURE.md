@@ -164,6 +164,32 @@ Output structure:
 - Pattern for authenticated workflows: navigate → `checkLogin()` → if expired, `waitForLogin()` in headed mode or throw in headless
 - `exportCookies` uses CDP `Network.getAllCookies` (all domains), not `page.cookies()` (current page only)
 
+### Credential Store
+
+Plaintext JSON credential storage at `~/.cdp-custodial-access/credentials/{workflow}/{profile}.json`.
+
+**Components:**
+- `CredentialStore` (`src/core/credential-store.ts`) — CRUD for credential files. Interface-first design for future encrypted/keychain backends.
+- Login Recipes (`src/auth/recipes.ts`) — static domain → login steps map for known sites (LinkedIn single-step, Google multi-step). Falls back to generic DOM form detection for unknown sites.
+- `autoLogin` tool (`src/tools/auto-login.ts`) — orchestrator: check session → load credentials → recipe/selector fill → verify → 2FA wait → manual fallback
+- `promptCredentialSave` tool (`src/tools/auto-login.ts`) — post-workflow CLI prompt to capture credentials via stdin (masked password input)
+
+**Upgrade path:** Replace `CredentialStore` class with encrypted file or OS keychain implementation. No other code changes needed — all consumers use the `get/save/delete/exists` interface.
+
+### Network Tracing
+
+Optional HAR 1.2 capture of all network traffic during a session.
+
+**Components:**
+- `NetworkTracer` (`src/core/network-tracer.ts`) — listens to CDP Network domain events (`requestWillBeSent`, `responseReceived`, `loadingFinished`, `loadingFailed`), builds HAR incrementally, writes `traces/network.har`
+- Activated via `LaunchConfig.networkTrace`: `true` for headers-only, `'full'` for response bodies included
+- Attached to pages alongside `captureConsole` in `BrowserSession`
+- `Tracer.save()` calls `NetworkTracer.save()` automatically — one save writes both `trace.json` and `network.har`
+
+**CLI usage:** `--network-trace` (headers only) or `--network-trace=full` (with response bodies). Passes through `cdp run` automatically.
+
+**HAR format:** Standard 1.2 spec. Failed requests get `status: 0` and `_error` field. Binary response bodies are base64-encoded. Creator field identifies `cdp-custodial-access`.
+
 ## Cloudflare Challenges
 
 - `navigate()` reports `success: true` on Cloudflare challenge pages — `networkidle2` resolves on the lightweight challenge HTML. Always check page title after navigation.

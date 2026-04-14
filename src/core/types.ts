@@ -13,6 +13,8 @@ export interface LaunchConfig {
   defaultViewport?: { width: number; height: number };
   locale?: string;
   timezone?: string;
+  /** Enable network trace capture. true = headers only, 'full' = include response bodies */
+  networkTrace?: boolean | 'full';
 }
 
 export interface ConnectConfig {

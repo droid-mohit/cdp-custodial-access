@@ -42,6 +42,7 @@ Execute an existing workflow and analyze its audit trail to report pass/fail wit
    - **HTML snapshots** (`traces/step-*.html`) — only read these when a step failed with `ELEMENT_NOT_FOUND` to check what selectors are actually available in the DOM
    - **`metadata.json`** — check overall duration, completion status
    - **Logs** (inside `trace.json` → `logs[]`) — check for `level: 'error'` entries from both `workflow` and `browser` sources
+   - **Network HAR** (`traces/network.har`, if present) — check for failed requests (status 0), unexpected redirects, or API errors that might explain extraction failures
 
 5. **Extract the `@prompt`** — read the workflow source file, extract the `@prompt` tag from the top comment. This is the user's original intent.
 

@@ -12,6 +12,7 @@
  */
 
 import { BrowserController } from '../../src/sdk/browser-controller.js';
+import { CredentialStore } from '../../src/core/credential-store.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -26,8 +27,6 @@ const LINKEDIN_LOGIN_URL = 'https://www.linkedin.com/login';
 const SCROLL_ITERATIONS = 8;
 /** Pause between scrolls to let content load (ms) */
 const SCROLL_SETTLE_MS = 3000;
-/** Login timeout for headed mode (ms) */
-const LOGIN_TIMEOUT = 120_000;
 
 /** Selectors indicating a logged-in state */
 const LOGGED_IN_SELECTORS = [
@@ -43,6 +42,17 @@ const FEED_POST_SELECTORS = [
   '[data-testid="mainFeed"] [role="listitem"]',
 ];
 
+/** Patterns that indicate a LinkedIn challenge/checkpoint page */
+const CHALLENGE_INDICATORS = {
+  urlPatterns: ['/checkpoint/', '/challenge'],
+  titlePatterns: ['Challenge', 'Security Verification', 'Verify'],
+};
+
+/** Max time to wait for a challenge to be resolved in headed mode (ms) */
+const CHALLENGE_TIMEOUT_MS = 120_000;
+/** Poll interval when waiting for challenge resolution (ms) */
+const CHALLENGE_POLL_MS = 3000;
+
 // ─── Output Directory ────────────────────────────────────────────────
 
 function buildOutputDir(): string {
@@ -56,19 +66,85 @@ function buildOutputDir(): string {
 // ─── Helpers ─────────────────────────────────────────────────────────
 
 /**
- * Try multiple selectors to detect element presence on page.
- * Returns the first selector that matches, or null.
+ * Detect whether the current page is a LinkedIn challenge/checkpoint.
  */
-async function detectSelector(
+function isChallengePage(url: string, title: string): boolean {
+  const lowerUrl = url.toLowerCase();
+  const lowerTitle = title.toLowerCase();
+  return (
+    CHALLENGE_INDICATORS.urlPatterns.some((p) => lowerUrl.includes(p.toLowerCase())) ||
+    CHALLENGE_INDICATORS.titlePatterns.some((p) => lowerTitle.includes(p.toLowerCase()))
+  );
+}
+
+/**
+ * After autoLogin, verify we actually landed on the feed.
+ * If a challenge page is detected:
+ *   - Headed mode: wait for the user to resolve it, then verify feed loaded.
+ *   - Headless mode: throw with an actionable error.
+ */
+async function ensureFeedLoaded(
   session: Awaited<ReturnType<BrowserController['launch']>>,
-  selectors: string[],
-): Promise<string | null> {
+  headed: boolean,
+): Promise<{ challengeEncountered: boolean }> {
   const page = await session.page();
-  for (const sel of selectors) {
-    const found = await page.evaluate((s: string) => !!document.querySelector(s), sel);
-    if (found) return sel;
+  let url = page.url();
+  let title = await page.title();
+
+  if (!isChallengePage(url, title)) {
+    // No challenge — confirm feed selector is present
+    try {
+      await page.waitForSelector(LOGGED_IN_SELECTORS[0], { timeout: 10_000 });
+      return { challengeEncountered: false }; // Feed is loaded
+    } catch {
+      // Selector not found — re-check URL in case a redirect happened
+      url = page.url();
+      title = await page.title();
+      if (!isChallengePage(url, title)) {
+        throw new Error(
+          `Feed did not load. Page title: "${title}", URL: ${url}. ` +
+          'Try running with --headed to diagnose.',
+        );
+      }
+    }
   }
-  return null;
+
+  // Challenge page detected
+  session.tracer.log(`[workflow] Challenge detected: "${title}" — ${url}`);
+
+  if (!headed) {
+    throw new Error(
+      `LinkedIn triggered a security challenge ("${title}"). ` +
+      'Run with --headed to resolve it manually:\n' +
+      `  npx tsx workflows/simple/linkedin-feed.ts --headed`,
+    );
+  }
+
+  // Headed mode: wait for the user to clear the challenge
+  session.tracer.log('[workflow] Waiting for challenge resolution (complete it in the browser)...');
+  const deadline = Date.now() + CHALLENGE_TIMEOUT_MS;
+
+  while (Date.now() < deadline) {
+    await session.wait({ ms: CHALLENGE_POLL_MS });
+    url = page.url();
+    title = await page.title();
+
+    if (!isChallengePage(url, title)) {
+      session.tracer.log('[workflow] Challenge resolved. Verifying feed...');
+      try {
+        await page.waitForSelector(LOGGED_IN_SELECTORS[0], { timeout: 10_000 });
+        session.tracer.log('[workflow] Feed loaded after challenge resolution.');
+        return { challengeEncountered: true };
+      } catch {
+        // Might need more time for feed to render after challenge
+      }
+    }
+  }
+
+  throw new Error(
+    'Challenge was not resolved within the timeout. ' +
+    'Please complete the verification in the browser and re-run the workflow.',
+  );
 }
 
 /**
@@ -120,6 +196,11 @@ function getArg(flag: string): string | undefined {
 async function run() {
   const headed = process.argv.includes('--headed');
   const profile = getArg('--profile') ?? 'default';
+  const networkTrace = process.argv.includes('--network-trace=full')
+    ? 'full' as const
+    : process.argv.includes('--network-trace')
+      ? true
+      : undefined;
   const startTime = Date.now();
 
   console.log(`[workflow] Starting: ${WORKFLOW_NAME}`);
@@ -137,6 +218,7 @@ async function run() {
     headless: !headed,
     locale: 'en-US',
     timezone: 'America/New_York',
+    networkTrace,
   });
 
   // Close extra tabs from Chrome session restore
@@ -153,6 +235,9 @@ async function run() {
   fs.mkdirSync(outputDir, { recursive: true });
   session.tracer.setOutputDir(outputDir);
 
+  let loginResult: Awaited<ReturnType<typeof session.autoLogin>> | undefined;
+  let challengeEncountered = false;
+
   try {
     // 1. Navigate to LinkedIn feed
     session.tracer.log('[workflow] Navigating to LinkedIn feed...');
@@ -168,47 +253,47 @@ async function run() {
     session.tracer.log(`[workflow] Page loaded: ${navResult.data?.title}`);
     await session.wait({ ms: 3000 });
 
-    // 2. Check login status
-    const loginCheck = await session.checkLogin({
-      checkUrl: LINKEDIN_FEED_URL,
-      loggedInSelector: LOGGED_IN_SELECTORS[0],
+    // 2. Auto-login (checks session → tries stored credentials → falls back to manual)
+    session.tracer.log('[workflow] Checking authentication...');
+    loginResult = await session.autoLogin({
+      loginUrl: LINKEDIN_LOGIN_URL,
+      successSelector: LOGGED_IN_SELECTORS[0],
+      workflow: WORKFLOW_NAME,
+      profile,
     });
 
-    if (!loginCheck.data?.isLoggedIn) {
-      // Try other selectors before giving up
-      const foundSel = await detectSelector(session, LOGGED_IN_SELECTORS);
+    if (!loginResult.success) {
+      throw new Error(`Login failed: ${loginResult.error}`);
+    }
+    session.tracer.log(`[workflow] Authenticated via ${loginResult.data?.method}.`);
 
-      if (!foundSel) {
-        if (!headed) {
-          throw new Error(
-            'Not logged in to LinkedIn. Run with --headed to login:\n' +
-            `  npx tsx workflows/${WORKFLOW_NAME}.ts --headed`,
-          );
-        }
-
-        // Headed mode — manual login
-        session.tracer.log('[workflow] Not logged in. Please log in via the browser window...');
-        await session.navigate({ url: LINKEDIN_LOGIN_URL });
-        await session.waitForLogin({
-          loginUrl: LINKEDIN_LOGIN_URL,
-          successSelector: LOGGED_IN_SELECTORS[0],
-          timeout: LOGIN_TIMEOUT,
-        });
-        session.tracer.log('[workflow] Login successful!');
-
-        // waitForLogin already lands on the feed — just let it settle
-        await session.wait({ ms: 5000 });
-      }
+    // Let the feed settle after login
+    if (loginResult.data?.method !== 'existing-session') {
+      await session.wait({ ms: 5000 });
     }
 
-    session.tracer.log('[workflow] Logged in — feed is accessible.');
+    // 3. Verify feed loaded (detect challenge pages)
+    session.tracer.log('[workflow] Verifying feed is accessible...');
+    const feedCheck = await ensureFeedLoaded(session, headed);
+    challengeEncountered = feedCheck.challengeEncountered;
 
-    // 3. Scroll to load feed posts
+    // 4. Scroll to load feed posts
     session.tracer.log('[workflow] Scrolling to load feed posts...');
     const totalTextLen = await scrollToLoadFeed(session, SCROLL_ITERATIONS, SCROLL_SETTLE_MS);
     session.tracer.log(`[workflow] Feed loaded — ${(totalTextLen / 1024).toFixed(1)} KB of text content`);
 
-    // 4. Extract full page text (no LLM — pure HTML text extraction)
+    // 5. Extract full page text (no LLM — pure HTML text extraction)
+    // Verify we're still on the feed (challenge could have appeared mid-scroll)
+    const prePage = await session.page();
+    const preUrl = prePage.url();
+    const preTitle = await prePage.title();
+    if (isChallengePage(preUrl, preTitle)) {
+      throw new Error(
+        `LinkedIn triggered a security challenge during scrolling ("${preTitle}"). ` +
+        'Re-run with --headed to resolve it.',
+      );
+    }
+
     session.tracer.log('[workflow] Extracting feed content...');
     const contentResult = await session.getPageContent();
 
@@ -219,14 +304,14 @@ async function run() {
     const feedText = contentResult.data.text;
     session.tracer.log(`[workflow] Extracted ${feedText.length} characters of feed text`);
 
-    // 5. Save feed.txt
+    // 6. Save feed.txt
     const feedPath = path.join(outputDir, 'feed.txt');
     fs.writeFileSync(feedPath, feedText, 'utf-8');
 
-    // 6. Save traces
+    // 7. Save traces
     session.tracer.save();
 
-    // 7. Save metadata
+    // 8. Save metadata
     const metadata = {
       workflow: WORKFLOW_NAME,
       url: contentResult.data.url,
@@ -237,8 +322,12 @@ async function run() {
       completedAt: new Date().toISOString(),
       durationMs: Date.now() - startTime,
       totalSteps: session.tracer.stepCount,
+      ...(networkTrace ? {
+        networkTrace: true,
+        networkEntries: session.networkTracer?.getEntryCount() ?? 0,
+      } : {}),
       outputDir,
-      files: ['feed.txt', 'metadata.json', 'traces/'],
+      files: ['feed.txt', 'metadata.json', 'traces/', ...(networkTrace ? ['traces/network.har'] : [])],
     };
 
     const metadataPath = path.join(outputDir, 'metadata.json');
@@ -251,6 +340,19 @@ async function run() {
     session.tracer.log(`[workflow] Duration: ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
 
   } finally {
+    // Prompt to save credentials if:
+    //  - manual login was used, or
+    //  - a challenge required manual interaction, or
+    //  - no credentials are stored yet (so future headless runs can auto-fill)
+    const store = new CredentialStore();
+    const hasStoredCreds = store.exists(WORKFLOW_NAME, profile);
+    if (loginResult?.data?.promptSaveAfter || challengeEncountered || !hasStoredCreds) {
+      await session.promptCredentialSave({
+        loginUrl: LINKEDIN_LOGIN_URL,
+        workflow: WORKFLOW_NAME,
+        profile,
+      });
+    }
     session.tracer.save();
     await session.close({ persist: true });
     session.tracer.log('[workflow] Session persisted and closed.');
