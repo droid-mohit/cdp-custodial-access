@@ -24,3 +24,6 @@ export type { FetchSitemapParams, FetchSitemapResult, SitemapEntry } from './sit
 
 export { fetchRobots, isUrlAllowed } from './robots.js';
 export type { FetchRobotsParams, FetchRobotsResult, RobotsRule, IsAllowedParams } from './robots.js';
+
+export { autoLogin, promptCredentialSave } from './auto-login.js';
+export type { AutoLoginParams, AutoLoginResult, PromptCredentialSaveParams } from './auto-login.js';

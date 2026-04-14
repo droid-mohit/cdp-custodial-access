@@ -46,8 +46,11 @@ SDK (src/sdk/)            ← BrowserController, EnrichedSession with tool metho
     ↓
 Tools (src/tools/)        ← navigate, click, extract, etc. (standalone async functions)
     ↓
+Auth (src/auth/)           ← login recipes (domain → login steps map)
+    ↓
 Core (src/core/)          ← BrowserManager, BrowserSession, ProfileManager
   + Stealth (src/stealth/) ← StealthManager, patches (property, fingerprint, behavioral, network)
+  + NetworkTracer          ← optional HAR 1.2 capture via CDP Network domain
     ↓
 Puppeteer (puppeteer-extra + stealth plugin)
 ```
@@ -56,6 +59,8 @@ Puppeteer (puppeteer-extra + stealth plugin)
 - `src/llm/` — LLM abstraction (factory pattern): OpenAI, Anthropic, Bedrock. Bedrock is an optional dep loaded dynamically.
 - `llmExtract` tool — extracts structured data from collected HTML pages via LLM. Uses tracer HTML snapshots or explicit pages.
 - `fetchSitemap`/`fetchRobots` tools — pure HTTP, no browser session needed. Pattern for non-browser utility tools.
+- `src/auth/` — Login recipes: domain-keyed login step sequences for known sites. Used by `autoLogin` tool.
+- `src/core/credential-store.ts` — CredentialStore: plaintext JSON CRUD at `~/.cdp-custodial-access/credentials/{workflow}/{profile}.json`. Interface-first for future encrypted/keychain backends.
 
 **Key patterns:**
 - Tools are standalone functions taking `(session, params)` → `ToolResult<T>`. They never throw — errors return `{ success: false, errorCode }`.
@@ -63,8 +68,10 @@ Puppeteer (puppeteer-extra + stealth plugin)
 - Tools are atomic operations. Multi-step use cases (crawling, archiving) belong in `workflows/`, not `src/tools/`.
 - `page.pdf()` only works in headless mode — workflows that generate PDFs must force `headless: true`.
 - `EnrichedSession` is a `BrowserSession` with tool methods attached (e.g., `session.navigate(...)`, `session.click(...)`).
+- CDP sessions: `page.createCDPSession()` for per-page events (network capture), `browser.target().createCDPSession()` for browser-level. The `session.cdp()` method returns browser-level.
 - Stealth patches come in two flavors: browser-injected JS strings (property/fingerprint patches) and Node.js data generators (behavioral patches for mouse/typing/scroll).
 - ESM project (`"type": "module"`) — all imports use `.js` extensions even for `.ts` source files.
+- Node.js `process.stdout.write` callback type requires `Error | null | undefined`, not just `Error | undefined` — matters when overriding write for password masking.
 - `puppeteer-extra` requires a type cast for the default import under `NodeNext` module resolution.
 
 ## Stealth
@@ -86,8 +93,17 @@ Puppeteer (puppeteer-extra + stealth plugin)
 ## Authentication
 
 - Auth tools: `checkLogin` (verify session), `waitForLogin` (headed manual login), `exportCookies`/`importCookies` (portable JSON)
+- Auto-login tool: `autoLogin` — orchestrates: check session → load stored credentials → fill form → verify → fall back to manual
 - Login persists via Chrome profile — first run: login manually with `--headed`, subsequent runs: cookies loaded automatically
-- Pattern for authenticated workflows: navigate → `checkLogin()` → if expired, `waitForLogin()` in headed mode or throw in headless
+- If cookies expire, `autoLogin` replays stored credentials automatically. If credentials fail, falls back to `--headed` manual login.
+- Credential storage: `~/.cdp-custodial-access/credentials/{workflow}/{profile}.json` — plaintext JSON, one file per workflow+profile pair
+- Login recipes: `src/auth/recipes.ts` — domain-keyed login sequences for known sites (LinkedIn, Google). Unknown sites use generic form detection.
+- 2FA: credentials with `requires2FA: true` auto-fill username/password, then pause for human OTP entry
+- `promptCredentialSave` — post-workflow CLI prompt to capture and store credentials after manual login
+- Pattern for authenticated workflows: `session.autoLogin({ loginUrl, successSelector, workflow, profile })` replaces the manual checkLogin → waitForLogin block
+- `autoLogin` can return `existing-session` even when the site triggers a post-auth challenge (e.g., LinkedIn App Challenge, device verification). Always verify the target page loaded after `autoLogin` — check URL/title for `/checkpoint/` or "Challenge" patterns.
+- Post-auth challenge handling: headed mode should poll and wait for user resolution; headless should throw with `--headed` suggestion. See `ensureFeedLoaded()` in `linkedin-feed.ts` for the pattern.
+- `promptCredentialSave` should also trigger when `CredentialStore.exists(workflow, profile)` is false — proactively capture credentials on first successful run, not just after manual login.
 - `exportCookies` uses CDP `Network.getAllCookies` (all domains), not `page.cookies()` (current page only)
 
 ## Audit Trails
@@ -99,6 +115,7 @@ Puppeteer (puppeteer-extra + stealth plugin)
 - Browser console logs are auto-captured via page `console` event (source: `'browser'` in trace logs)
 - Run context (headed/headless, profile, stealth level, locale, viewport, userAgent) auto-captured in `trace.json`
 - Output: `~/.cdp-custodial-access/runs/{workflow}/{date}/{time}/traces/` — `trace.json` + `step-NNN-{tool}.html` + `step-NNN-{tool}.png`
+- Network tracing: `--network-trace` captures all HTTP requests/responses as `traces/network.har` (HAR 1.2). `--network-trace=full` includes response bodies. Opt-in per run, no code changes needed.
 
 ## Workflows
 

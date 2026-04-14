@@ -5,6 +5,7 @@ import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const puppeteer = puppeteerExtra as unknown as PuppeteerExtra;
 import { BrowserSession } from './browser-session.js';
+import { NetworkTracer } from './network-tracer.js';
 import { ProfileManager } from './profile-manager.js';
 import { StealthManager } from '../stealth/index.js';
 import { generateFingerprint } from '../stealth/fingerprint-profile.js';
@@ -69,6 +70,11 @@ export class BrowserManager {
       await this.stealthManager.applyToPage(page, fingerprint);
     }
 
+    // Create network tracer if requested
+    const networkTracer = launchConfig.networkTrace
+      ? new NetworkTracer({ includeBodies: launchConfig.networkTrace === 'full' })
+      : undefined;
+
     const session = new BrowserSession(
       browser,
       this.stealthManager,
@@ -77,6 +83,8 @@ export class BrowserManager {
       profile,
       this.profileManager,
       launchConfig.proxy,
+      networkTracer,
+      launchConfig.headless ?? true,
     );
 
     // Set run context for audit traces

@@ -11,6 +11,7 @@ import * as fileTools from '../tools/files.js';
 import * as doneTools from '../tools/done.js';
 import * as llmExtractTools from '../tools/llm-extract.js';
 import * as authTools from '../tools/session-auth.js';
+import * as autoLoginTools from '../tools/auto-login.js';
 
 export interface BrowserControllerConfig {
   stealth?: SessionConfig['stealth'];
@@ -47,6 +48,8 @@ export interface EnrichedSession extends BrowserSession {
   waitForLogin(params: authTools.WaitForLoginParams): Promise<ToolResult<authTools.WaitForLoginResult>>;
   exportCookies(params?: authTools.ExportCookiesParams): Promise<ToolResult<authTools.ExportCookiesResult>>;
   importCookies(params: authTools.ImportCookiesParams): Promise<ToolResult<authTools.ImportCookiesResult>>;
+  autoLogin(params: autoLoginTools.AutoLoginParams): Promise<ToolResult<autoLoginTools.AutoLoginResult>>;
+  promptCredentialSave(params: autoLoginTools.PromptCredentialSaveParams): Promise<ToolResult<void>>;
 }
 
 function enrichSession(session: BrowserSession): EnrichedSession {
@@ -102,6 +105,10 @@ function enrichSession(session: BrowserSession): EnrichedSession {
     t.record('exportCookies', params ?? {}, session, () => authTools.exportCookies(session, params));
   enriched.importCookies = (params) =>
     t.record('importCookies', { count: params.cookies.length }, session, () => authTools.importCookies(session, params));
+  enriched.autoLogin = (params) =>
+    t.record('autoLogin', params, session, () => autoLoginTools.autoLogin(session, params));
+  enriched.promptCredentialSave = (params) =>
+    t.record('promptCredentialSave', params, session, () => autoLoginTools.promptCredentialSave(session, params));
   return enriched;
 }
 

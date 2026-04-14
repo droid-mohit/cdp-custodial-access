@@ -206,6 +206,11 @@ async function waitForResponse(
 
 async function run() {
   const headed = process.argv.includes('--headed');
+  const networkTrace = process.argv.includes('--network-trace=full')
+    ? 'full' as const
+    : process.argv.includes('--network-trace')
+      ? true
+      : undefined;
   const startTime = Date.now();
 
   console.log(`[workflow] Starting: ${WORKFLOW_NAME}`);
@@ -222,6 +227,7 @@ async function run() {
     headless: !headed,
     locale: 'en-US',
     timezone: 'America/New_York',
+    networkTrace,
   });
 
   // Close extra tabs from Chrome session restore — persistent profiles cause
@@ -326,8 +332,12 @@ async function run() {
       completedAt: new Date().toISOString(),
       durationMs: Date.now() - startTime,
       totalSteps: session.tracer.stepCount,
+      ...(networkTrace ? {
+        networkTrace: true,
+        networkEntries: session.networkTracer?.getEntryCount() ?? 0,
+      } : {}),
       outputDir,
-      files: ['page.html', 'metadata.json', 'traces/'],
+      files: ['page.html', 'metadata.json', 'traces/', ...(networkTrace ? ['traces/network.har'] : [])],
     };
 
     const metadataPath = path.join(outputDir, 'metadata.json');
