@@ -10,10 +10,10 @@
  *     metadata.json  — run metadata (timestamp, url, prompt, duration)
  *
  * Usage:
- *   npx tsx workflows/example.ts [--headed]
+ *   npx tsx workflows/simple/example.ts [--headed]
  */
 
-import { BrowserController } from '../src/sdk/browser-controller.js';
+import { BrowserController } from '../../src/sdk/browser-controller.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';

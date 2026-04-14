@@ -7,6 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 CDP Custodial Access is a TypeScript SDK + MCP server for stealth browser automation via Chrome DevTools Protocol. It provides tool-based, programmatic browser control with maximum anti-detection built in.
 
 **Consumption interfaces:**
+- **CLI**: `cdp run <workflow>` / `cdp list` / `cdp info <workflow>`
 - **SDK**: `import { BrowserController } from 'cdp-custodial-access'`
 - **MCP**: stdio transport server (`npx cdp-custodial-access`)
 
@@ -37,6 +38,8 @@ npx vitest run tests/unit/stealth/
 Layered monolith with unidirectional dependency flow:
 
 ```
+CLI (src/cli/)            ← cdp run/list/info, registry-based workflow runner
+    ↓ (spawns tsx, no SDK import)
 MCP Server (src/mcp/)     ← stdio transport, tool registration
     ↓
 SDK (src/sdk/)            ← BrowserController, EnrichedSession with tool methods
@@ -99,16 +102,27 @@ Puppeteer (puppeteer-extra + stealth plugin)
 
 ## Workflows
 
-- Live in `workflows/` as standalone TypeScript scripts, run via `npx tsx workflows/{name}.ts`
+- Registered in `workflows/registry.json` — each entry has name, description, file, type, and params
+- Organized by type: `workflows/simple/` for single-script linear workflows (`type: "SIMPLE"`)
+- Run via CLI: `cdp run <workflow-name> [--param value...] [--headed]`
+- Run directly: `npx tsx workflows/simple/{name}.ts [--headed]`
+- Discover workflows: `cdp list` (all workflows) or `cdp info <name>` (detailed params)
 - Output goes to `~/.cdp-custodial-access/runs/{filename}/{YYYY-MM-DD}/{HH-mm-ss}/`
 - Workflow name is derived from the script filename automatically
-- To generate a workflow from a plain English use case: `/generate-workflow {use case}`
+- To generate a workflow (single-pass): `/generate-workflow {use case}`
+- To generate with self-healing execution: `/create-workflow {use case}`
+- To validate a workflow runs correctly: `/validate-workflow {workflow-name}`
 - To debug/improve a workflow from its audit traces: `/improve-workflow {workflow-name} [--runs N]`
 - Every workflow has a `@prompt` tag in its top comment preserving the original user request
 
 ## Skills
 
 - Project skills live in `skills/{name}/SKILL.md`, slash commands in `.claude/commands/{name}.md`
+- `/generate-workflow` — single-pass workflow generation from plain English
+- `/create-workflow` — self-healing generation: generate → execute → analyze → fix (up to 5 cycles)
+- `/validate-workflow` — execute a workflow and report pass/fail diagnostics (read-only)
+- `/improve-workflow` — debug existing workflows from past run audit traces
+- When adding new workflows, register them in `workflows/registry.json` and place the file in `workflows/{type}/` (e.g., `workflows/simple/`)
 - When adding new tools, update both `skills/generate-workflow/SKILL.md` (tool reference tables) and `skills/improve-workflow/SKILL.md` (failure categories + available tools)
 
 ## Cloudflare Challenges

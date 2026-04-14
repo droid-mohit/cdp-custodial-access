@@ -5,14 +5,15 @@ description: Use when the user asks to create a browser workflow, automation scr
 
 # Generate Browser Workflow
 
-Create a workflow script in `workflows/` from a plain English use case description.
+Create a workflow script in `workflows/simple/` from a plain English use case description.
 
 ## Process
 
 1. Clarify what the user wants (site, actions, what to extract/save)
 2. Identify which tools are needed from the reference below
-3. Generate the workflow file at `workflows/{name}.ts`
-4. Verify it compiles with `npx tsc --noEmit`
+3. Generate the workflow file at `workflows/simple/{name}.ts`
+4. Add entry to `workflows/registry.json` with name, description, file, type (`SIMPLE`), and params
+5. Verify it compiles with `npx tsc --noEmit`
 
 ## Workflow Template
 
@@ -28,10 +29,10 @@ Every workflow MUST follow this structure. The `@prompt` tag at the top preserve
  *
  * Output: ~/.cdp-custodial-access/runs/{filename}/{YYYY-MM-DD}/{HH-mm-ss}/
  *
- * Usage: npx tsx workflows/{name}.ts [--headed]
+ * Usage: npx tsx workflows/simple/{name}.ts [--headed]
  */
 
-import { BrowserController } from '../src/sdk/browser-controller.js';
+import { BrowserController } from '../../src/sdk/browser-controller.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -250,6 +251,23 @@ if (!loginCheck.data?.isLoggedIn) {
 
 The profile persists cookies automatically via `session.close({ persist: true })`. After the first headed login, subsequent headless runs skip the login entirely.
 
+## Registry Entry
+
+After generating the workflow, add an entry to `workflows/registry.json`:
+
+```json
+"{name}": {
+  "description": "{one-line description from workflow comment}",
+  "file": "simple/{name}.ts",
+  "type": "SIMPLE",
+  "params": {
+    // Add an entry for each CLI parameter the workflow accepts (excluding --headed)
+    // Example:
+    // "url": { "type": "string", "required": true, "hint": "The URL to process" }
+  }
+}
+```
+
 ## Reference Workflow
 
-See `workflows/example.ts` for a complete working ChatGPT workflow demonstrating all patterns.
+See `workflows/simple/example.ts` for a complete working ChatGPT workflow demonstrating all patterns.

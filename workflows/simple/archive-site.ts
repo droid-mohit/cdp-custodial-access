@@ -9,17 +9,17 @@
  * Output: ~/.cdp-custodial-access/runs/archive-site/{YYYY-MM-DD}/{HH-mm-ss}/
  *
  * Usage:
- *   npx tsx workflows/archive-site.ts <url> [--headed] [--max-pages N]
+ *   npx tsx workflows/simple/archive-site.ts <url> [--headed] [--max-pages N]
  *
  * Examples:
- *   npx tsx workflows/archive-site.ts https://docs.example.com
- *   npx tsx workflows/archive-site.ts https://example.com --max-pages 20
+ *   npx tsx workflows/simple/archive-site.ts https://docs.example.com
+ *   npx tsx workflows/simple/archive-site.ts https://example.com --max-pages 20
  */
 
-import { BrowserController } from '../src/sdk/browser-controller.js';
-import { fetchSitemap } from '../src/tools/sitemap.js';
-import { fetchRobots, isUrlAllowed } from '../src/tools/robots.js';
-import type { RobotsRule } from '../src/tools/robots.js';
+import { BrowserController } from '../../src/sdk/browser-controller.js';
+import { fetchSitemap } from '../../src/tools/sitemap.js';
+import { fetchRobots, isUrlAllowed } from '../../src/tools/robots.js';
+import type { RobotsRule } from '../../src/tools/robots.js';
 import { PDFDocument } from 'pdf-lib';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -42,7 +42,7 @@ function parseArgs() {
   const maxPages = maxPagesIdx !== -1 ? parseInt(args[maxPagesIdx + 1], 10) : DEFAULT_MAX_PAGES;
 
   if (!url) {
-    console.error('Usage: npx tsx workflows/archive-site.ts <url> [--headed] [--max-pages N]');
+    console.error('Usage: npx tsx workflows/simple/archive-site.ts <url> [--headed] [--max-pages N]');
     process.exit(1);
   }
 

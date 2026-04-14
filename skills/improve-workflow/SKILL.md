@@ -44,7 +44,7 @@ digraph improve {
 
 ### Step 1: Load Context
 
-1. Read `workflows/{workflow-name}.ts`
+1. Look up the workflow in `workflows/registry.json` to get the file path, then read `workflows/{entry.file}`
 2. Extract the `@prompt` tag from the top comment — this is the user's original intent
 3. List available runs:
    ```bash
@@ -134,6 +134,12 @@ After user approval:
 - **Preserve working parts** — if steps 1-5 work fine and step 6 fails, don't rewrite the whole workflow.
 - **Check auth state** — if traces show redirects to login pages or missing content, the issue is likely expired authentication, not broken selectors.
 - **Check run context** — `trace.json` → `context` shows headed/headless, stealth level, locale. A workflow that works headed but fails headless is usually a bot detection or auth issue.
+
+## Related Skills
+
+- **`/create-workflow`** — generates a new workflow with self-healing execution loop (up to 5 cycles)
+- **`/validate-workflow`** — executes a workflow and reports pass/fail diagnostics without fixing
+- **`/generate-workflow`** — single-pass workflow generation without execution
 
 ## Available Tools for Fixes
 
