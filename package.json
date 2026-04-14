@@ -22,7 +22,8 @@
   "main": "./dist/sdk/index.js",
   "types": "./dist/sdk/index.d.ts",
   "bin": {
-    "cdp-custodial-access": "./dist/mcp/index.js"
+    "cdp-custodial-access": "./dist/mcp/index.js",
+    "cdp": "./dist/cli/index.js"
   },
   "exports": {
     ".": {

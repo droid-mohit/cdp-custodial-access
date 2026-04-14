@@ -1,0 +1,33 @@
+{
+  "workflows": {
+    "archive-site": {
+      "description": "Crawl a website 1 level deep and merge all pages into a single PDF",
+      "file": "simple/archive-site.ts",
+      "type": "SIMPLE",
+      "params": {
+        "url": {
+          "type": "string",
+          "required": true,
+          "hint": "The URL to start crawling from (must start with http)"
+        },
+        "max-pages": {
+          "type": "number",
+          "required": false,
+          "hint": "Maximum number of pages to crawl (default: 50)"
+        }
+      }
+    },
+    "example": {
+      "description": "Go to ChatGPT and ask about trending AI topics",
+      "file": "simple/example.ts",
+      "type": "SIMPLE",
+      "params": {}
+    },
+    "linkedin-feed": {
+      "description": "Extract latest posts from LinkedIn feed",
+      "file": "simple/linkedin-feed.ts",
+      "type": "SIMPLE",
+      "params": {}
+    }
+  }
+}
