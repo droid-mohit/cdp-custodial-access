@@ -62,16 +62,38 @@ await session.close({ persist: true });
 
 ## Getting Started
 
+### Install
+
 ```bash
-npm install
-npm run build
+npm install cdp-custodial-access
 ```
 
-Then try:
+This adds the `cdp` command to your project. Run it with `npx`:
 
 ```bash
-cdp list                    # See available workflows
-cdp run example --headed    # Run one with a visible browser
+npx cdp list                    # See available workflows
+npx cdp run example --headed    # Run one with a visible browser
+```
+
+### Install globally (optional)
+
+To use `cdp` without `npx`:
+
+```bash
+npm install -g cdp-custodial-access
+cdp list
+cdp run example --headed
+```
+
+> **macOS/Linux permission error?** Use `sudo npm install -g cdp-custodial-access` or [fix npm permissions](https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally).
+
+### From source
+
+```bash
+git clone https://github.com/mohit-goyal/cdp-custodial-access.git
+cd cdp-custodial-access
+npm install && npm run build
+npm link          # Makes 'cdp' available as a command
 ```
 
 ## Built-in Workflows
