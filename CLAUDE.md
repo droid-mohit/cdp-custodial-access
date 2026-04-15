@@ -104,6 +104,7 @@ Puppeteer (puppeteer-extra + stealth plugin)
 - `autoLogin` can return `existing-session` even when the site triggers a post-auth challenge (e.g., LinkedIn App Challenge, device verification). Always verify the target page loaded after `autoLogin` — check URL/title for `/checkpoint/` or "Challenge" patterns.
 - Post-auth challenge handling: headed mode should poll and wait for user resolution; headless should throw with `--headed` suggestion. See `ensureFeedLoaded()` in `linkedin-feed.ts` for the pattern.
 - `promptCredentialSave` should also trigger when `CredentialStore.exists(workflow, profile)` is false — proactively capture credentials on first successful run, not just after manual login.
+- `autoLogin` may redirect to a default page (e.g., `/feed/`) after login, not the page you navigated to before auth. Always re-navigate to the target URL after successful login.
 - `exportCookies` uses CDP `Network.getAllCookies` (all domains), not `page.cookies()` (current page only)
 
 ## Audit Trails
@@ -130,17 +131,26 @@ Puppeteer (puppeteer-extra + stealth plugin)
 - To generate with self-healing execution: `/create-workflow {use case}`
 - To validate a workflow runs correctly: `/validate-workflow {workflow-name}`
 - To debug/improve a workflow from its audit traces: `/improve-workflow {workflow-name} [--runs N]`
-- Every workflow has a `@prompt` tag in its top comment preserving the original user request
+- Every workflow has a `@prompt` tag (original user request) and a `@steps` tag (verified working sequence) in its top comment
+- Run workflows non-interactively during development: `echo "n" | npx tsx workflows/simple/{name}.ts --headed 2>&1`
+- Filter noisy browser console output: `| grep -E "\[workflow\]|Fatal error|Error:"`
 
 ## Skills
 
 - Project skills live in `skills/{name}/SKILL.md`, slash commands in `.claude/commands/{name}.md`
 - `/generate-workflow` — single-pass workflow generation from plain English
-- `/create-workflow` — self-healing generation: generate → execute → analyze → fix (up to 5 cycles)
+- `/create-workflow` — self-healing generation: generate → execute → analyze → fix (no cycle limit, fail fast iterate fast)
 - `/validate-workflow` — execute a workflow and report pass/fail diagnostics (read-only)
 - `/improve-workflow` — debug existing workflows from past run audit traces
 - When adding new workflows, register them in `workflows/registry.json` and place the file in `workflows/{type}/` (e.g., `workflows/simple/`)
 - When adding new tools, update both `skills/generate-workflow/SKILL.md` (tool reference tables) and `skills/improve-workflow/SKILL.md` (failure categories + available tools)
+
+## Virtualized Lists
+
+- Many sites (LinkedIn, etc.) use virtualized/recycled lists — only ~20 DOM nodes exist at a time regardless of list size.
+- `session.scroll()` may not advance virtual lists. Use `scrollIntoView` on the last list child + `window.scrollBy()` instead.
+- Accumulate-as-you-scroll pattern: extract visible items after each scroll, deduplicate by unique key (e.g., profile URL), stop after N consecutive scrolls with no new items.
+- Sites with obfuscated CSS classes (hashed/random): use `data-testid`, `aria-label`, `componentkey`, or structural selectors instead of class names.
 
 ## Cloudflare Challenges
 

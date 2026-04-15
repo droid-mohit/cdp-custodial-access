@@ -102,6 +102,7 @@ npm link          # Makes 'cdp' available as a command
 |----------|-------------|---------|
 | `example` | Asks ChatGPT about AI trends and saves the response | `cdp run example --headed` |
 | `linkedin-feed` | Extracts your LinkedIn feed into a text file | `cdp run linkedin-feed --headed` |
+| `linkedin-connections` | Extracts all your LinkedIn connections with names, roles, and companies | `cdp run linkedin-connections --headed` |
 | `archive-site` | Crawls a website and saves it as a single PDF | `cdp run archive-site --url https://docs.example.com` |
 
 Use `cdp info <workflow>` to see all available options for any workflow.
@@ -114,14 +115,14 @@ You can create new workflows without writing code — describe what you want in 
 /create-workflow Go to Google News, search for "AI breakthroughs", extract the top 10 headlines
 ```
 
-This generates the workflow, runs it, and automatically fixes issues like wrong selectors or timing problems (up to 5 attempts).
+This generates the workflow, runs it, and automatically fixes issues like wrong selectors or timing problems — iterating until the workflow works.
 
 Other workflow commands:
 
 | Command | What it does |
 |---------|-------------|
 | `/generate-workflow <description>` | Quick single-pass generation (you debug manually) |
-| `/create-workflow <description>` | Self-healing generation (auto-fixes issues) |
+| `/create-workflow <description>` | Self-healing generation (auto-fixes issues, no cycle limit) |
 | `/validate-workflow <name>` | Run a workflow and report if it's working correctly |
 | `/improve-workflow <name>` | Analyze past runs to diagnose and fix failures |
 
