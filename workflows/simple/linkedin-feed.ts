@@ -1,6 +1,14 @@
 /**
  * @prompt I want to access linkedin and extract all the latest happenings from my feed. No llm extraction, just pure html extraction. store it in feed.txt
  *
+ * @steps
+ * 1. Navigate to linkedin.com/feed
+ * 2. Authenticate via autoLogin (manual fallback on first run)
+ * 3. Verify feed loaded — detect challenge pages, wait for resolution in headed mode
+ * 4. Scroll 8 iterations to load feed posts (lazy-loading)
+ * 5. Extract full page text via getPageContent() (pure HTML, no LLM)
+ * 6. Save feed.txt + metadata.json
+ *
  * Workflow: LinkedIn Feed Extractor
  *
  * Navigates to LinkedIn feed, scrolls to load posts, and extracts the full

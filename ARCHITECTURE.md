@@ -162,6 +162,7 @@ Output structure:
 - Auth tools: `checkLogin` (verify session), `waitForLogin` (headed manual login), `exportCookies`/`importCookies` (portable JSON)
 - Login persists via Chrome profile — first run: login manually with `--headed`, subsequent runs: cookies loaded automatically
 - Pattern for authenticated workflows: navigate → `checkLogin()` → if expired, `waitForLogin()` in headed mode or throw in headless
+- `autoLogin` may redirect to a default page (e.g., `/feed/`) after login, not the page you navigated to before auth. Always re-navigate to the target URL after successful login.
 - `exportCookies` uses CDP `Network.getAllCookies` (all domains), not `page.cookies()` (current page only)
 
 ### Credential Store
@@ -189,6 +190,32 @@ Optional HAR 1.2 capture of all network traffic during a session.
 **CLI usage:** `--network-trace` (headers only) or `--network-trace=full` (with response bodies). Passes through `cdp run` automatically.
 
 **HAR format:** Standard 1.2 spec. Failed requests get `status: 0` and `_error` field. Binary response bodies are base64-encoded. Creator field identifies `cdp-custodial-access`.
+
+## Virtualized Lists
+
+Many modern sites (LinkedIn, Twitter, etc.) use virtualized/recycled lists that only keep a fixed number of DOM nodes alive (~20), recycling content as the user scrolls.
+
+**Key patterns:**
+- `session.scroll()` may not advance virtual lists. Use `element.scrollIntoView()` on the last list child + `window.scrollBy()` instead.
+- Accumulate-as-you-scroll: extract visible items after each scroll, deduplicate by unique key (e.g., profile URL), stop after N consecutive scrolls with no new items.
+- Sites with obfuscated CSS classes (hashed/random): use `data-testid`, `aria-label`, `componentkey`, or structural selectors instead of class names.
+
+```typescript
+// Example: accumulate from a virtualized list
+const allItems = new Map<string, Item>();
+for (let i = 0; i < MAX_SCROLLS; i++) {
+  const visible = await page.evaluate(extractVisibleItems, CONTAINER_SELECTOR);
+  for (const item of visible) {
+    if (!allItems.has(item.id)) allItems.set(item.id, item);
+  }
+  await page.evaluate(() => {
+    const container = document.querySelector('[data-testid="lazy-column"]');
+    container?.lastElementChild?.scrollIntoView({ behavior: 'instant', block: 'end' });
+    window.scrollBy(0, 3000);
+  });
+  await new Promise(r => setTimeout(r, 3000));
+}
+```
 
 ## Cloudflare Challenges
 
@@ -267,8 +294,13 @@ npx vitest run tests/unit/cli/
 
 1. Create the workflow file in `workflows/simple/{name}.ts`
 2. Use `../../src/sdk/browser-controller.js` for imports
-3. Register in `workflows/registry.json` with name, description, file, type, and params
-4. Update skills if the workflow introduces new patterns
+3. Include `@prompt` (original user request) and `@steps` (verified working sequence) tags in the top-level comment
+4. Register in `workflows/registry.json` with name, description, file, type, and params
+5. Update skills if the workflow introduces new patterns
+
+**Development tips:**
+- Run non-interactively: `echo "n" | npx tsx workflows/simple/{name}.ts --headed 2>&1`
+- Filter noisy browser console output: `| grep -E "\[workflow\]|Fatal error|Error:"`
 
 ### Adding a New Tool
 

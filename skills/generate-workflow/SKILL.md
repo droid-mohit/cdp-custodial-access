@@ -17,11 +17,17 @@ Create a workflow script in `workflows/simple/` from a plain English use case de
 
 ## Workflow Template
 
-Every workflow MUST follow this structure. The `@prompt` tag at the top preserves the user's original request verbatim — this is used by `/improve-workflow` to understand intent.
+Every workflow MUST follow this structure. The `@prompt` tag at the top preserves the user's original request verbatim — this is used by `/improve-workflow` to understand intent. The `@steps` tag documents the high-level sequence of actions the workflow performs.
 
 ```typescript
 /**
  * @prompt {The user's original plain-English use case, copied verbatim}
+ *
+ * @steps
+ * 1. {First action — e.g., Navigate to https://example.com}
+ * 2. {Second action — e.g., Authenticate via autoLogin}
+ * 3. {Third action — e.g., Extract pricing table via CSS selectors}
+ * 4. {Fourth action — e.g., Save to pricing.json + metadata.json}
  *
  * Workflow: {Title}
  *

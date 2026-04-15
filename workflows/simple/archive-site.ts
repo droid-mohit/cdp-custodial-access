@@ -1,6 +1,14 @@
 /**
  * @prompt Archive a website to PDF — crawl all same-domain links 1 level deep from the start page and merge into a single PDF
  *
+ * @steps
+ * 1. Fetch sitemap.xml and robots.txt for URL discovery
+ * 2. Navigate to start URL, extract all same-domain links (1 level deep)
+ * 3. Deduplicate and filter URLs (respect robots.txt, cap at --max-pages)
+ * 4. Visit each page in headless mode, capture as PDF (page.pdf())
+ * 5. Merge individual PDFs into archive.pdf
+ * 6. Save archive.pdf + metadata.json
+ *
  * Workflow: Website Archiver
  *
  * Crawls a website 1 level deep (start page + all same-domain links found on it),

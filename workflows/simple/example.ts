@@ -1,4 +1,13 @@
 /**
+ * @prompt Example workflow — go to ChatGPT and ask about trending AI topics
+ *
+ * @steps
+ * 1. Navigate to chatgpt.com
+ * 2. Authenticate via autoLogin (manual fallback on first run)
+ * 3. Type AI trends prompt into chat input and submit
+ * 4. Wait for response to stream and stabilize
+ * 5. Save page HTML + metadata.json
+ *
  * Example Workflow: ChatGPT Trending AI Query
  *
  * Goes to chatgpt.com, submits a prompt about AI trends, waits for the
