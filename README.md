@@ -7,6 +7,7 @@ Automate any website with a real browser — stealth built in, audit trails incl
 - **Browse like a human** — clicks, types, and scrolls with realistic mouse movements and typing delays
 - **Stay undetected** — built-in stealth defeats bot detection on sites like ChatGPT, LinkedIn, and Cloudflare-protected pages
 - **Remember sessions** — login once, and cookies persist across runs. If sessions expire, saved credentials are replayed automatically
+- **Human handoff** — when automation gets stuck on a captcha or verification, stream the live browser to your phone or laptop, solve it, then let automation continue
 - **Full audit trail** — every action is recorded with screenshots, HTML snapshots, and timing
 
 ## Three Ways to Use It
@@ -168,9 +169,41 @@ cdp run linkedin-feed             # After that: auto-login if session expires
 
 Credentials are stored locally at `~/.cdp-custodial-access/credentials/` — one file per workflow. They never leave your machine.
 
+## Human Intervention
+
+Some steps can't be automated — captchas, device verification, or anything a bot detector is specifically designed to block. Instead of failing, the browser can hand off to you.
+
+When your workflow calls `requestHumanIntervention`, it:
+1. Streams the live browser to a public URL (via ngrok by default)
+2. Sends the link to you over Slack, a webhook, or any channel you configure
+3. Waits while you complete the step from your own device
+4. Resumes automation the moment you click **Done**
+
+```typescript
+const { data: intervention } = await session.requestHumanIntervention({
+  reason: 'Solve hCaptcha on checkout page',
+  tunnel: { type: 'ngrok' },
+  notifier: { type: 'slack', webhook: process.env.SLACK_WEBHOOK },
+});
+
+// link is live — Slack message already sent
+const result = await intervention.waitForCompletion();  // blocks until Done
+await session.click({ selector: '#submit' });           // picks up where you left off
+```
+
+Your mouse and keyboard are streamed back to the VM with real human timing — the same input a bot detector would see from a genuine user. The session link is single-use and expires automatically.
+
+**Setup:** install `@ngrok/ngrok` and set `NGROK_AUTHTOKEN`:
+```bash
+npm install @ngrok/ngrok
+export NGROK_AUTHTOKEN=your_token
+```
+
+Full documentation, security notes, and custom tunnel/notifier setup: [HUMAN_INTERVENTION.md](./HUMAN_INTERVENTION.md)
+
 ## Available Browser Tools
 
-25 tools organized by what they do:
+26 tools organized by what they do:
 
 | Category | Tools |
 |----------|-------|
@@ -180,6 +213,7 @@ Credentials are stored locally at `~/.cdp-custodial-access/credentials/` — one
 | **Extract** | `extract`, `screenshot`, `getPageContent`, `llmExtract` |
 | **Tabs** | `listTabs`, `switchTab`, `closeTab` |
 | **Auth** | `autoLogin`, `promptCredentialSave`, `checkLogin`, `waitForLogin`, `exportCookies`, `importCookies` |
+| **Human-in-the-loop** | `requestHumanIntervention` |
 | **Site Discovery** | `fetchSitemap`, `fetchRobots` |
 
 ## Architecture & Development

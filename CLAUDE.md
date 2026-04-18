@@ -57,6 +57,9 @@ Puppeteer (puppeteer-extra + stealth plugin)
 
 **Additional layers:**
 - `src/llm/` — LLM abstraction (factory pattern): OpenAI, Anthropic, Bedrock. Bedrock is an optional dep loaded dynamically.
+- `src/tunnel/` — Pluggable tunnel adapters (ngrok default). Same factory pattern as `src/llm/`. Optional peer deps use dynamic import.
+- `src/notifiers/` — Pluggable notification adapters (Slack, webhook). Same factory pattern.
+- `src/intervention/` — InterventionServer (HTTP + WebSocket + CDP screencast wiring) + operator client assets.
 - `llmExtract` tool — extracts structured data from collected HTML pages via LLM. Uses tracer HTML snapshots or explicit pages.
 - `fetchSitemap`/`fetchRobots` tools — pure HTTP, no browser session needed. Pattern for non-browser utility tools.
 - `src/auth/` — Login recipes: domain-keyed login step sequences for known sites. Used by `autoLogin` tool.
@@ -69,6 +72,8 @@ Puppeteer (puppeteer-extra + stealth plugin)
 - `page.pdf()` only works in headless mode — workflows that generate PDFs must force `headless: true`.
 - `EnrichedSession` is a `BrowserSession` with tool methods attached (e.g., `session.navigate(...)`, `session.click(...)`).
 - CDP sessions: `page.createCDPSession()` for per-page events (network capture), `browser.target().createCDPSession()` for browser-level. The `session.cdp()` method returns browser-level.
+- Optional peer deps: use `await import('pkg' as string)` with `any` typing to avoid TypeScript errors when the pkg is in `optionalDependencies` but not installed.
+- `BrowserController.getSessions()` returns all active sessions; `closeSession(id)` closes one — use these in integration test teardown, not a `.close()` method.
 - Stealth patches come in two flavors: browser-injected JS strings (property/fingerprint patches) and Node.js data generators (behavioral patches for mouse/typing/scroll).
 - ESM project (`"type": "module"`) — all imports use `.js` extensions even for `.ts` source files.
 - Node.js `process.stdout.write` callback type requires `Error | null | undefined`, not just `Error | undefined` — matters when overriding write for password masking.
@@ -151,6 +156,19 @@ Puppeteer (puppeteer-extra + stealth plugin)
 - `session.scroll()` may not advance virtual lists. Use `scrollIntoView` on the last list child + `window.scrollBy()` instead.
 - Accumulate-as-you-scroll pattern: extract visible items after each scroll, deduplicate by unique key (e.g., profile URL), stop after N consecutive scrolls with no new items.
 - Sites with obfuscated CSS classes (hashed/random): use `data-testid`, `aria-label`, `componentkey`, or structural selectors instead of class names.
+
+## Human Intervention
+
+- `requestHumanIntervention()` is two-phase: the tool call returns a handle (URL ready) immediately; `handle.waitForCompletion()` is a separate await that blocks until Done or timeout. Notifier failure is non-fatal — tool still returns the handle.
+- `Page.startScreencast` is tied to the current document — `page.reload()` or `page.goto()` during an active intervention stops frame emission. Do not navigate mid-session without restarting screencast.
+- `InterventionServer.onReady(fn)` is safe to call after the session is already started — if `isReady` is already true, `fn` is called immediately. Same pattern for `onComplete`.
+
+## Testing Patterns
+
+- `vi.mock()` factories are hoisted before module body — variables defined in the module aren't initialized when the factory runs. Use `vi.hoisted(() => ...)` for values that mock factories reference.
+- Class mocks with `new`: `vi.fn().mockReturnValue(obj)` doesn't work as a constructor in newer vitest. Use `vi.fn().mockImplementation(class { constructor() { return obj; } })` instead.
+- WebSocket tests: register `ws.on('message', handler)` **before** the `open` event fires (synchronously at WS creation). HTTP 101 + first WS frame often arrive in the same TCP packet — ws emits `open` then `message` synchronously in the same I/O callback, so a listener registered after `await connectClient()` misses the first message. Buffer messages from creation and serve from the buffer on demand.
+- `http.Server.close()` can hang after WS upgrades — TCP FIN handshake lingers. Use `ws.terminate()` + a `setTimeout(resolve, 300)` fallback in cleanup rather than relying on the `close()` callback alone.
 
 ## Cloudflare Challenges
 

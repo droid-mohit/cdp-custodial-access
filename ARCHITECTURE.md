@@ -6,14 +6,17 @@ Technical reference for developers working on or extending CDP Custodial Access.
 
 ```
 src/
-  cli/        # CLI entry point (cdp run/list/info) — spawns tsx, no SDK import
-  core/       # BrowserManager, BrowserSession, ProfileManager, Tracer
-  stealth/    # StealthManager, patches (property, fingerprint, behavioral, network)
-  tools/      # Browser tools (navigation, interaction, forms, extraction, tabs, files, llm-extract)
-  llm/        # LLM abstraction layer (factory, OpenAI/Anthropic/Bedrock clients, text processing)
-  sdk/        # BrowserController, EnrichedSession
-  mcp/        # MCP server with stdio transport
-  types.ts    # Shared type definitions
+  cli/          # CLI entry point (cdp run/list/info) — spawns tsx, no SDK import
+  core/         # BrowserManager, BrowserSession, ProfileManager, Tracer
+  stealth/      # StealthManager, patches (property, fingerprint, behavioral, network)
+  tools/        # Browser tools (navigation, interaction, forms, extraction, tabs, files, llm-extract, human-intervention)
+  llm/          # LLM abstraction layer (factory, OpenAI/Anthropic/Bedrock clients, text processing)
+  tunnel/       # Pluggable tunnel adapters (ngrok default). Exposes local ports via public URLs.
+  notifiers/    # Pluggable notification adapters (Slack, webhook). Delivers intervention links.
+  intervention/ # InterventionServer (HTTP + WebSocket + CDP wiring) + operator client (HTML/JS/CSS)
+  sdk/          # BrowserController, EnrichedSession
+  mcp/          # MCP server with stdio transport
+  types.ts      # Shared type definitions
 workflows/
   registry.json   # Workflow manifest (name, type, params)
   simple/         # SIMPLE type workflows (single-script, linear)
@@ -44,6 +47,9 @@ Puppeteer (puppeteer-extra + stealth plugin)
 
 **Additional layers:**
 - `src/llm/` — LLM abstraction (factory pattern): OpenAI, Anthropic, Bedrock. Bedrock is an optional dep loaded dynamically.
+- `src/tunnel/` — Pluggable tunnel adapters. Same factory pattern as `src/llm/`. `NgrokTunnel` is the default; optional peer dep (`@ngrok/ngrok`) loaded dynamically. Custom adapters implement `{ expose(port): Promise<{publicUrl}>, close(): Promise<void> }`.
+- `src/notifiers/` — Pluggable notification adapters. Same factory pattern. `SlackNotifier` and `WebhookNotifier` use global `fetch`; no extra deps.
+- `src/intervention/` — `InterventionServer` (HTTP + WebSocket server using the `ws` package, wired to CDP screencast and input injection) + static operator client (HTML/CSS/JS embedded as TypeScript string constants in `client/assets.ts` — no build step needed).
 - `llmExtract` tool — extracts structured data from collected HTML pages via LLM. Uses tracer HTML snapshots or explicit pages.
 - `fetchSitemap`/`fetchRobots` tools — pure HTTP, no browser session needed. Pattern for non-browser utility tools.
 
@@ -66,7 +72,7 @@ Tools are atomic operations. Multi-step use cases (crawling, archiving) belong i
 
 ### EnrichedSession
 
-`EnrichedSession` is a `BrowserSession` with all 23 tool methods attached (e.g., `session.navigate(...)`, `session.click(...)`). Created by `enrichSession()` which wraps each tool call with automatic tracing.
+`EnrichedSession` is a `BrowserSession` with all 26 tool methods attached (e.g., `session.navigate(...)`, `session.click(...)`). Created by `enrichSession()` which wraps each tool call with automatic tracing.
 
 ### ESM
 
@@ -191,6 +197,82 @@ Optional HAR 1.2 capture of all network traffic during a session.
 
 **HAR format:** Standard 1.2 spec. Failed requests get `status: 0` and `_error` field. Binary response bodies are base64-encoded. Creator field identifies `cdp-custodial-access`.
 
+## Human Intervention
+
+Pauses a running workflow, streams the live browser to a remote operator via a public URL, and resumes when the operator clicks Done. Designed for captchas, device verification, and other steps that block automated execution.
+
+### Components
+
+| Component | File | Responsibility |
+|---|---|---|
+| Tool | `src/tools/human-intervention.ts` | Orchestrates the other four; returns a handle with `waitForCompletion()` |
+| `InterventionServer` | `src/intervention/server.ts` | Local HTTP + WebSocket server; streams CDP screencast frames; injects input via CDP |
+| Operator client | `src/intervention/client/assets.ts` | Static HTML/CSS/JS embedded as TS string constants; served by `InterventionServer` |
+| Tunnel adapters | `src/tunnel/` | Expose the local server port via a public URL. Factory pattern, `NgrokTunnel` default. |
+| Notifier adapters | `src/notifiers/` | Deliver the URL to the operator. Factory pattern, `SlackNotifier` default. |
+
+### Data Flow
+
+```
+Workflow calls requestHumanIntervention()
+  → InterventionServer.start()   (binds to 127.0.0.1:<ephemeral>)
+  → Tunnel.expose(port)          (returns public URL)
+  → Notifier.notify({url, ...})  (non-fatal on failure)
+  → returns handle {url, waitForCompletion()}
+
+handle.waitForCompletion() awaits:
+  Promise.race([serverDone, timeoutPromise])
+
+Operator opens URL → WS upgrade → token validated + consumed (one-time use)
+  → CDP Page.startScreencast → frames → WS → operator canvas
+  → operator mouse/keyboard → WS → CDP Input.dispatch*
+  → operator clicks Done → {type:'done'} on WS → waitForCompletion() resolves
+
+finally: Page.stopScreencast, server.stop(), tunnel.close()
+```
+
+### Streaming Protocol
+
+Frames travel **VM → operator** as:
+```json
+{ "type": "frame", "data": "<base64-jpeg>", "frameWidth": 1280, "frameHeight": 960,
+  "vmViewportWidth": 1920, "vmViewportHeight": 1080, "timestamp": 1713456789000 }
+```
+
+Input travels **operator → VM** as normalized coordinates (`[0, 1]` relative to the rendered frame):
+```json
+{ "type": "mousedown", "x": 0.5, "y": 0.5, "button": 0, "modifiers": 0, "timestamp": 1713456789100 }
+```
+
+The VM denormalizes using its CDP viewport (`Page.getLayoutMetrics`) before calling `Input.dispatchMouseEvent`.
+
+### Stream Quality Presets
+
+| Preset | JPEG quality | `maxWidth × maxHeight` | `everyNthFrame` |
+|---|---|---|---|
+| `low` | 50 | 1024 × 768 | 3 |
+| `medium` (default) | 70 | 1280 × 960 | 2 |
+| `high` | 85 | 1920 × 1440 | 1 |
+
+### Security
+
+- **One-time token** — 32-byte random hex. WS upgrade validates with `crypto.timingSafeEqual` and atomically marks consumed. Second attempt with same token → HTTP close 1008.
+- **Invalid token** — HTTP 401 response before WS handshake.
+- **Navigation lock** — when `allowNavigation: false` (default), `page.on('framenavigated')` detects cross-origin navigation and calls `page.goto(lockedUrl)` to snap back.
+- **No input logging** — the tracer records metadata (duration, event count) but never the actual input events; operator may type 2FA codes or passwords.
+
+### Adding a New Tunnel Adapter
+
+Implement `src/tunnel/types.ts#Tunnel`, add a case to `src/tunnel/index.ts#createTunnel`, and list as an optional peer dep in `package.json`. Dynamic import pattern:
+```typescript
+const mod = await import('pkg-name' as string);  // 'as string' suppresses TS error for optional deps
+const client = (mod as any).default ?? mod;
+```
+
+### Adding a New Notifier Adapter
+
+Implement `src/notifiers/types.ts#Notifier`, add a case to `src/notifiers/index.ts#createNotifier`. Uses global `fetch` — no extra deps needed for HTTP-based notifiers.
+
 ## Virtualized Lists
 
 Many modern sites (LinkedIn, Twitter, etc.) use virtualized/recycled lists that only keep a fixed number of DOM nodes alive (~20), recycling content as the user scrolls.
@@ -306,7 +388,8 @@ npx vitest run tests/unit/cli/
 
 1. Create the tool in `src/tools/`
 2. Export from `src/tools/index.ts`
-3. Add to `EnrichedSession` in `src/sdk/`
-4. Register in MCP server (`src/mcp/`)
-5. Update `skills/generate-workflow/SKILL.md` (tool reference tables)
-6. Update `skills/improve-workflow/SKILL.md` (failure categories + available tools)
+3. Add to `EnrichedSession` interface + `enrichSession()` in `src/sdk/browser-controller.ts`
+4. Register in MCP server (`src/mcp/server.ts`) using `server.registerTool(name, {description, inputSchema: {…Zod schemas…}}, handler)`
+5. Add new `ToolErrorCode` values to `src/types.ts` if the tool introduces new failure modes
+6. Update `skills/generate-workflow/SKILL.md` (tool reference tables)
+7. Update `skills/improve-workflow/SKILL.md` (failure categories + available tools)
