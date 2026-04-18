@@ -846,5 +846,52 @@ export function createMCPServer(): McpServer {
     },
   );
 
+  server.registerTool(
+    'request_human_intervention',
+    {
+      description:
+        'Pause the workflow and stream the live browser to a public URL so a human operator can complete a step (captcha, device verification, etc.). Blocks until the operator clicks Done or the timeout expires.',
+      inputSchema: {
+        reason: z.string().describe('Human-readable explanation of what the operator needs to do.'),
+        timeoutMs: z.number().optional().describe('Max wait time in ms (default 900000 = 15 min). Pass 0 to wait forever.'),
+        tunnelType: z.enum(['ngrok', 'custom']).optional().describe('Tunnel adapter (default: ngrok). Requires NGROK_AUTHTOKEN env var.'),
+        notifierType: z.enum(['slack', 'webhook']).optional().describe('Channel to send the operator link.'),
+        notifierWebhook: z.string().optional().describe('Slack webhook URL or generic webhook URL.'),
+        streamQuality: z.enum(['low', 'medium', 'high']).optional().describe('Streaming quality preset (default: medium).'),
+        allowNavigation: z.boolean().optional().describe('Allow operator to navigate cross-origin (default: false).'),
+      },
+    },
+    async (params) => {
+      try {
+        const session = getActiveSession();
+        const tunnelConfig = params.tunnelType === 'custom'
+          ? undefined
+          : { type: (params.tunnelType ?? 'ngrok') as 'ngrok' };
+        const notifierConfig = params.notifierType && params.notifierWebhook
+          ? { type: params.notifierType as 'slack' | 'webhook', webhook: params.notifierWebhook, url: params.notifierWebhook }
+          : undefined;
+
+        const result = await session.requestHumanIntervention({
+          reason: params.reason,
+          timeoutMs: params.timeoutMs,
+          tunnel: tunnelConfig,
+          notifier: notifierConfig ?? null,
+          streamQuality: params.streamQuality as 'low' | 'medium' | 'high' | undefined,
+          allowNavigation: params.allowNavigation,
+        });
+
+        if (!result.success) {
+          return errorContent(result.error ?? 'Intervention setup failed');
+        }
+
+        const handle = result.data!;
+        const completion = await handle.waitForCompletion();
+        return { content: toContent({ interventionId: handle.interventionId, url: handle.url, ...completion }) };
+      } catch (error) {
+        return errorContent(error instanceof Error ? error.message : String(error));
+      }
+    },
+  );
+
   return server;
 }

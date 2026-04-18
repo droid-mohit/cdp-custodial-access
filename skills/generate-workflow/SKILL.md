@@ -163,6 +163,7 @@ All tools are methods on `session` (EnrichedSession). They return `ToolResult<T>
 | `session.waitForLogin({loginUrl?, successSelector?, timeout?})` | | Wait for manual login in headed mode |
 | `session.exportCookies({domains?})` | | Export all cookies as portable JSON |
 | `session.importCookies({cookies})` | | Import cookies from exported JSON |
+| `session.requestHumanIntervention({reason, tunnel?, notifier?, timeoutMs?, streamQuality?, allowNavigation?})` | | Pause automation, stream live browser to a public URL for human to complete a step (captcha, verification, etc.), resume when Done clicked. Returns a handle — call `handle.waitForCompletion()` to block until done. Requires `@ngrok/ngrok` + `NGROK_AUTHTOKEN` for default tunnel. |
 
 ### Site Discovery (session-independent)
 | Function | Params | Description |
