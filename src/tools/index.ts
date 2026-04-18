@@ -27,3 +27,6 @@ export type { FetchRobotsParams, FetchRobotsResult, RobotsRule, IsAllowedParams 
 
 export { autoLogin, promptCredentialSave } from './auto-login.js';
 export type { AutoLoginParams, AutoLoginResult, PromptCredentialSaveParams } from './auto-login.js';
+
+export { requestHumanIntervention } from './human-intervention.js';
+export type { HumanInterventionParams, HumanInterventionHandle, InterventionResult, StreamQualityPreset } from './human-intervention.js';

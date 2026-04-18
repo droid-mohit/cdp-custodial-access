@@ -12,6 +12,7 @@ import * as doneTools from '../tools/done.js';
 import * as llmExtractTools from '../tools/llm-extract.js';
 import * as authTools from '../tools/session-auth.js';
 import * as autoLoginTools from '../tools/auto-login.js';
+import * as humanInterventionTools from '../tools/human-intervention.js';
 
 export interface BrowserControllerConfig {
   stealth?: SessionConfig['stealth'];
@@ -50,6 +51,7 @@ export interface EnrichedSession extends BrowserSession {
   importCookies(params: authTools.ImportCookiesParams): Promise<ToolResult<authTools.ImportCookiesResult>>;
   autoLogin(params: autoLoginTools.AutoLoginParams): Promise<ToolResult<autoLoginTools.AutoLoginResult>>;
   promptCredentialSave(params: autoLoginTools.PromptCredentialSaveParams): Promise<ToolResult<void>>;
+  requestHumanIntervention(params: humanInterventionTools.HumanInterventionParams): Promise<ToolResult<humanInterventionTools.HumanInterventionHandle>>;
 }
 
 function enrichSession(session: BrowserSession): EnrichedSession {
@@ -109,6 +111,8 @@ function enrichSession(session: BrowserSession): EnrichedSession {
     t.record('autoLogin', params, session, () => autoLoginTools.autoLogin(session, params));
   enriched.promptCredentialSave = (params) =>
     t.record('promptCredentialSave', params, session, () => autoLoginTools.promptCredentialSave(session, params));
+  enriched.requestHumanIntervention = (params) =>
+    t.record('requestHumanIntervention', params, session, () => humanInterventionTools.requestHumanIntervention(session, params));
   return enriched;
 }
 

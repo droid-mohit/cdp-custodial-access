@@ -97,6 +97,11 @@ Compare each run against the `@prompt` (intended behavior):
 | `autoLogin` returns `existing-session` but page is a challenge/checkpoint | Site triggered post-auth security challenge (device verification, app confirmation) | Add post-login verification: check URL for `/checkpoint/` or title for "Challenge"/"Verify". In headed mode, poll and wait for user resolution; in headless, throw with `--headed` suggestion. See `ensureFeedLoaded()` in `linkedin-feed.ts` |
 | All steps succeed, extracted content is a login/challenge page | `autoLogin` short-circuited on stale session; workflow didn't verify page state | Add page-state verification after `autoLogin` and before extraction. Check URL/title, not just tool success |
 | Credentials never prompted/saved despite manual interaction | `promptCredentialSave` only triggers on `promptSaveAfter` flag | Also trigger when `CredentialStore.exists(workflow, profile)` is false — proactive save on first run |
+| `TUNNEL_DEPENDENCY_MISSING` from `requestHumanIntervention` | `@ngrok/ngrok` package not installed | Run `npm install @ngrok/ngrok` and set `NGROK_AUTHTOKEN` env var |
+| `TUNNEL_AUTH_FAILED` from `requestHumanIntervention` | `NGROK_AUTHTOKEN` missing or invalid | Set `NGROK_AUTHTOKEN` env var or pass `tunnel.authtoken` explicitly |
+| `TUNNEL_UNAVAILABLE` from `requestHumanIntervention` | ngrok tunnel timed out establishing | Check network connectivity; retry the intervention step |
+| `status: 'timeout'` from `intervention.waitForCompletion()` | Operator didn't respond within `timeoutMs` | Increase `timeoutMs`, verify notification was delivered, check Slack channel |
+| `status: 'tunnel_lost'` from `intervention.waitForCompletion()` | Tunnel dropped mid-session | Log as warning and re-call `requestHumanIntervention` to get a fresh URL |
 
 ### Step 4: Present Findings
 
